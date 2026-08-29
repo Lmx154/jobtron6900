@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block title %}Dashboard · Jobtron{% endblock %}{% block content %}
+<div class="heading"><div><p class="eyebrow">Local application history</p><h1>Dashboard</h1></div><a class="button" href="/applications">New application</a></div>
+<section class="stats">{% for status,count in counts.items() %}{% if count %}<a href="/applications?status={{ status }}"><strong>{{ count }}</strong><span>{{ status }}</span></a>{% endif %}{% endfor %}</section>
+<div class="grid two"><section><h2>Recent applications</h2>{% for app in applications %}<a class="item" href="/applications/{{ app.id }}"><div><strong>{{ app.formal_title }}</strong><small>{{ app.company_name }}</small></div><span class="pill">{{ app.status }}</span></a>{% else %}<p class="empty">Create your first application to begin.</p>{% endfor %}</section>
+<section><h2>Calendar & timeline</h2>{% for event in events %}<a class="item" href="/applications/{{ event.application_id }}#events"><time>{{ event.occurred_at[:16]|replace('T',' ') }}</time><div><strong>{{ event.event_type }}</strong><small>{{ event.company_name }} · {{ event.formal_title }}</small></div></a>{% else %}<p class="empty">Upcoming and past events appear here.</p>{% endfor %}</section></div>
+{% endblock %}
