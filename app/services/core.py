@@ -23,6 +23,23 @@ PROFILE_FIELD_LABELS = {
     "location": "location",
 }
 
+# Attention thresholds (D2, D6): "attention" is computed on every read from
+# events and application rows, never stored, so these are the only place the
+# numbers live.
+FOLLOW_UP_DAYS = 7
+STALE_DAYS = 14
+IDLE_DRAFT_DAYS = 7
+HORIZON_DAYS = 7
+TERMINAL_STATUSES = {"Rejected", "Withdrawn", "Closed"}
+ACTIVE_STATUSES = {"Applied", "Assessment", "Interviewing"}
+# Staleness also watches Offer: a silent offer is exactly the kind of thing
+# that needs to surface, even though it is not one of the "waiting to hear
+# back" statuses above.
+STALE_STATUSES = ACTIVE_STATUSES | {"Offer"}
+DRAFT_STATUSES = {"Draft", "Ready to Apply"}
+
+EVENT_KINDS = {"manual", "lifecycle", "reminder"}
+
 
 class NotFoundError(LookupError): pass
 
@@ -536,7 +553,7 @@ class EventService:
         things coming up, and ten of them would bury every real interview.
         """
         floor = datetime.combine(today_local(), datetime.min.time(), local_timezone())
-        clause = "" if include_automatic else " AND e.dedupe_key = ''"
+        clause = "" if include_automatic else " AND e.kind <> 'lifecycle'"
         return self._decorate(self.db.all(
             f"{self.SELECT} WHERE e.starts_at_utc >= ?{clause} ORDER BY e.starts_at_utc, e.id LIMIT ?",
             (floor.astimezone(UTC).isoformat(timespec="seconds"), limit),
@@ -554,15 +571,18 @@ class EventService:
         notes: str = "",
         all_day: bool | None = None,
         dedupe_key: str = "",
+        kind: str = "manual",
     ):
+        if kind not in EVENT_KINDS:
+            raise ValueError(f"Unsupported event kind: {kind!r}")
         moment, detected_all_day = parse_stored(occurred_at)
         if moment is None:
             raise ValueError(f"Unrecognised event time: {occurred_at!r}")
         event_id = self.db.execute(
             """INSERT INTO events(
                    application_id,event_type,occurred_at,notes,
-                   starts_at_utc,all_day,timezone,dedupe_key,updated_at
-               ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                   starts_at_utc,all_day,timezone,dedupe_key,updated_at,kind
+               ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
             (
                 application_id, event_type, occurred_at, notes,
                 moment.isoformat(timespec="seconds"),
@@ -570,6 +590,7 @@ class EventService:
                 str(local_timezone()),
                 dedupe_key,
                 datetime.now(UTC).isoformat(timespec="seconds"),
+                kind,
             ),
         )
         return self.get(event_id)
@@ -583,7 +604,7 @@ class EventService:
         key: str = "",
         all_day: bool = True,
     ):
-        """Insert or refresh an automatic event. Safe to replay; never duplicates."""
+        """Insert or refresh a lifecycle event. Safe to replay; never duplicates."""
         if key:
             existing = self.db.one("SELECT id FROM events WHERE dedupe_key=?", (key,))
             if existing:
@@ -592,7 +613,7 @@ class EventService:
                     (event_type, occurred_at, notes, datetime.now(UTC).isoformat(timespec="seconds"), existing["id"]),
                 )
                 return self.get(existing["id"])
-        return self.add(application_id, event_type, occurred_at, notes, all_day=all_day, dedupe_key=key)
+        return self.add(application_id, event_type, occurred_at, notes, all_day=all_day, dedupe_key=key, kind="lifecycle")
 
     def update(self, event_id: int, event_type: str, occurred_at: str, notes: str = ""):
         moment, detected_all_day = parse_stored(occurred_at)
@@ -734,6 +755,37 @@ class ApplicationService:
         except Exception:
             return None
 
+    def _schedule_follow_up_reminder(self, application_id: int, applied_at: str) -> None:
+        """One follow-up reminder, seven days after Applied (D6).
+
+        Idempotent by `dedupe_key`, the same mechanism lifecycle events use: a
+        second Applied transition -- or a status-only replay -- finds the key
+        already taken and writes nothing. Never raises, for the same reason
+        `_record_lifecycle_event` never does: a calendar problem must not lose
+        an application write.
+        """
+        if not self.services or not applied_at:
+            return
+        key = f"follow_up:{application_id}:1"
+        if self.db.one("SELECT id FROM events WHERE dedupe_key=?", (key,)):
+            return
+        applied_moment, _ = parse_stored(applied_at)
+        if applied_moment is None:
+            return
+        starts_at = (applied_moment + timedelta(days=FOLLOW_UP_DAYS)).isoformat(timespec="seconds")
+        try:
+            self.services.events.add(
+                application_id,
+                "Follow-up",
+                starts_at,
+                notes="Automatic follow-up reminder",
+                all_day=True,
+                dedupe_key=key,
+                kind="reminder",
+            )
+        except Exception:
+            pass
+
     def update(self, application_id: int, **fields):
         old = self.get(application_id)
         company_name = fields.pop("company_name", old["company_name"])
@@ -789,6 +841,7 @@ class ApplicationService:
                 key=f"{application_id}:applied",
                 when=applied or "",
             )
+            self._schedule_follow_up_reminder(application_id, applied or "")
             self.archive(application_id)
         return self.get(application_id)
 
@@ -1251,6 +1304,181 @@ class ApplicationService:
             (application_id, name, role, email, phone, notes),
         )
         return required(self.db.one("SELECT * FROM contacts WHERE id=?", (contact_id,)), "contact")
+
+    def last_activity_at(self, application_id: int, now: datetime | None = None) -> str:
+        """Last touch on this application, computed fresh on every read (D2).
+
+        max(created_at, applied_at, any non-lifecycle event that has already
+        started as of `now`). Never cached: a stored last-activity value
+        drifts the moment a write path forgets to update it.
+        """
+        app = self.get(application_id)
+        now = now or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        best, _ = parse_stored(app["created_at"])
+        best = best or now
+        if app["applied_at"]:
+            applied_moment, _ = parse_stored(app["applied_at"])
+            if applied_moment and applied_moment > best:
+                best = applied_moment
+        for row in self.db.all(
+            "SELECT starts_at_utc FROM events WHERE application_id=? AND kind<>'lifecycle'",
+            (application_id,),
+        ):
+            moment, _ = parse_stored(row["starts_at_utc"])
+            if moment and moment <= now and moment > best:
+                best = moment
+        return best.isoformat(timespec="seconds")
+
+    def next_event(self, application_id: int, now: datetime | None = None) -> dict[str, Any] | None:
+        """The earliest upcoming non-lifecycle event for one application.
+
+        The single-row sibling of `attention()`'s `upcoming` bucket, used by
+        the detail page's "next:" line -- unlike that bucket it is not
+        limited to `HORIZON_DAYS`.
+        """
+        now = now or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        rows = self.db.all(
+            "SELECT * FROM events WHERE application_id=? AND kind<>'lifecycle' ORDER BY starts_at_utc",
+            (application_id,),
+        )
+        for row in rows:
+            moment, _ = parse_stored(row["starts_at_utc"])
+            if moment and moment >= now:
+                return row
+        return None
+
+    @staticmethod
+    def _reminder_resolved(reminder: dict[str, Any], application_events: list[dict[str, Any]]) -> bool:
+        """A reminder is resolved once a manual event, or a status change, lands after it."""
+        reminder_moment, _ = parse_stored(reminder["starts_at_utc"])
+        if reminder_moment is None:
+            return False
+        for other in application_events:
+            if other["id"] == reminder["id"]:
+                continue
+            other_moment, _ = parse_stored(other["starts_at_utc"])
+            if other_moment is None or other_moment <= reminder_moment:
+                continue
+            if other["kind"] == "manual":
+                return True
+            if other["kind"] == "lifecycle" and str(other["event_type"]).startswith("Status:"):
+                return True
+        return False
+
+    def attention(self, now: datetime | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Everything that needs the user's attention today (D2, D6).
+
+        Four buckets -- upcoming, follow_up_due, stale, idle_drafts -- computed
+        fresh from application and event rows every call. Nothing here is
+        stored; thresholds live in the module constants above.
+        """
+        now = now or datetime.now(UTC)
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
+        horizon = now + timedelta(days=HORIZON_DAYS)
+
+        apps = self.db.all(
+            "SELECT a.*, c.name company_name FROM applications a JOIN companies c ON c.id=a.company_id"
+        )
+        events_by_app: dict[int, list[dict[str, Any]]] = {}
+        for event in self.db.all("SELECT * FROM events"):
+            events_by_app.setdefault(event["application_id"], []).append(event)
+
+        upcoming: list[dict[str, Any]] = []
+        follow_up_due: list[dict[str, Any]] = []
+        stale: list[dict[str, Any]] = []
+        idle_drafts: list[dict[str, Any]] = []
+
+        for app in apps:
+            status = app["status"]
+            if status in TERMINAL_STATUSES:
+                continue
+            app_id = app["id"]
+            app_events = events_by_app.get(app_id, [])
+            last_activity = self.last_activity_at(app_id, now=now)
+            base = {
+                "application_id": app_id,
+                "company_name": app["company_name"],
+                "formal_title": app["formal_title"],
+                "status": status,
+                "last_activity_at": last_activity,
+                "tags": app["tags"],
+            }
+
+            for event in app_events:
+                if event["kind"] == "lifecycle":
+                    continue
+                moment, _ = parse_stored(event["starts_at_utc"])
+                if moment is None or not (now <= moment < horizon):
+                    continue
+                local_moment = to_local(event["starts_at_utc"])
+                when = local_moment.strftime("%a %b %d") if local_moment else event["starts_at_utc"]
+                upcoming.append({
+                    **base,
+                    "days": (moment - now).days,
+                    "reason": f"{event['event_type']} on {when}",
+                    "event_id": event["id"],
+                    "event_type": event["event_type"],
+                    "starts_at_utc": event["starts_at_utc"],
+                })
+
+            for event in app_events:
+                if event["kind"] != "reminder":
+                    continue
+                moment, _ = parse_stored(event["starts_at_utc"])
+                if moment is None or moment > now:
+                    continue
+                if self._reminder_resolved(event, app_events):
+                    continue
+                applied_moment = parse_stored(app["applied_at"])[0] if app["applied_at"] else None
+                days = (now - applied_moment).days if applied_moment else (now - moment).days
+                follow_up_due.append({
+                    **base,
+                    "days": days,
+                    "reason": f"Applied {days} days ago, no reply",
+                    "event_id": event["id"],
+                    "event_type": event["event_type"],
+                    "starts_at_utc": event["starts_at_utc"],
+                })
+
+            if status in STALE_STATUSES:
+                last_moment, _ = parse_stored(last_activity)
+                if last_moment:
+                    idle_days = (now - last_moment).days
+                    if idle_days > STALE_DAYS:
+                        stale.append({
+                            **base,
+                            "days": idle_days,
+                            "reason": f"{status}, quiet for {idle_days} days",
+                        })
+
+            if status in DRAFT_STATUSES:
+                created_moment, _ = parse_stored(app["created_at"])
+                has_manual = any(event["kind"] == "manual" for event in app_events)
+                if created_moment and not has_manual:
+                    idle_days = (now - created_moment).days
+                    if idle_days > IDLE_DRAFT_DAYS:
+                        idle_drafts.append({
+                            **base,
+                            "days": idle_days,
+                            "reason": f"Drafted {idle_days} days ago, never sent",
+                        })
+
+        upcoming.sort(key=lambda row: row["starts_at_utc"])
+        follow_up_due.sort(key=lambda row: row["days"], reverse=True)
+        stale.sort(key=lambda row: row["days"], reverse=True)
+        idle_drafts.sort(key=lambda row: row["days"], reverse=True)
+
+        return {
+            "upcoming": upcoming,
+            "follow_up_due": follow_up_due,
+            "stale": stale,
+            "idle_drafts": idle_drafts,
+        }
 
 
 class Services:

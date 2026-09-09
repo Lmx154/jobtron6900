@@ -140,6 +140,26 @@ summary.dot.more {
 .agenda { align-self: start; }
 .agenda .item time { display: block; margin-bottom: 2px; }
 
+.today-rail { margin-bottom: 22px; }
+.today-bucket { margin-top: 10px; }
+.today-bucket h3 { font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: #657068; margin: 14px 0 4px; }
+.today-bucket:first-of-type h3 { margin-top: 0; }
+.today-item.item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+}
+.today-item .status-dot {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 5px;
+  background: var(--dot, var(--green));
+}
+.today-item small { display: block; color: #657068; margin-top: 2px; }
+
 @media (max-width: 900px) {
   .calendar-layout.grid.two { grid-template-columns: 1fr; }
 }

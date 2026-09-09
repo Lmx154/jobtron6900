@@ -10,6 +10,8 @@
 
 <form method="get" action="/" class="search-form"><input type="hidden" name="month" value="{{ current_month }}">{% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}<input type="search" name="q" value="{{ query }}" placeholder="Search company, title, location, or tag"><button type="submit" class="secondary">Search</button></form>
 
+<section class="today-rail"><h2>Today</h2>{% set has_attention = attention.upcoming or attention.follow_up_due or attention.stale or attention.idle_drafts %}{% if not has_attention %}<p class="empty">Nothing is waiting on you.</p>{% else %}{% for bucket, label in [("upcoming","Upcoming"),("follow_up_due","Follow-up due"),("stale","Stale"),("idle_drafts","Idle drafts")] %}{% if attention[bucket] %}<div class="today-bucket"><h3>{{ label }}</h3>{% for row in attention[bucket] %}<a class="item today-item" href="/applications/{{ row.application_id }}"><span class="status-dot" style="--dot:{{ status_colors[row.status] }}"></span><div><strong>{{ row.company_name }}</strong> · {{ row.formal_title }}<small>{{ row.reason }}</small>{% if row.tags %}<div class="tags">{% for t in row.tags.split(',') %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}</div></a>{% endfor %}</div>{% endif %}{% endfor %}{% endif %}</section>
+
 <div class="grid two calendar-layout">
 <section class="calendar">
   <div class="calendar-head"><h2>{{ month_label }}</h2><nav class="calendar-nav"><a href="/?month={{ prev_month }}{{ status_suffix }}" aria-label="Previous month">&larr;</a><a href="/?month={{ this_month }}{{ status_suffix }}">Today</a><a href="/?month={{ next_month }}{{ status_suffix }}" aria-label="Next month">&rarr;</a></nav></div>

@@ -66,7 +66,7 @@ ONE RULE - repeat this loop:
 3. Do what "you_must" says. If "then_call" names a tool, call it, then go to 1.
 4. If "then_call" is null, stop and wait for the user.
 
-Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup.
+Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup. "What should I do today?" -> applications.attention, then ui.show_dashboard.
 
 Never call another Jobtron tool unless "you_must" or "then_call" names it.
 Never state a fact about the user that is not already stored in Jobtron; ask instead.
@@ -129,6 +129,7 @@ Never mark an application Applied until the user says they submitted it themselv
             "frontend_url":f"{frontend_base_url}/applications{query}",
             "applications":applications,
             "counts":counts,
+            "attention":services.applications.attention(),
         }
 
 
@@ -235,6 +236,16 @@ Never mark an application Applied until the user says they submitted it themselv
 
     @mcp.tool(name="applications.list")
     def applications_list(status:str|None=None,tag:str|None=None,query:str|None=None) -> list[dict]: """List applications, optionally filtered by status, by one whole tag (tags are lowercase words), and/or a free-text query matched against company, title, location, and tags."""; return services.applications.list(status,tag,query)
+    @mcp.tool(name="applications.attention",structured_output=True)
+    def applications_attention() -> dict[str,Any]:
+        """Return what needs the user's attention today.
+
+        CALL WHEN: the user asks what they should do today, what's due, or what needs attention.
+        RETURNS: four buckets (upcoming, follow_up_due, stale, idle_drafts), each a list of
+        applications with a short reason, plus frontend_url. Does not mutate state.
+        """
+        return {**services.applications.attention(),"frontend_url":f"{frontend_base_url}/applications"}
+
     @mcp.tool(name="applications.tag")
     def applications_tag(application_id:int,add:list[str]|None=None,remove:list[str]|None=None) -> dict: """Add and/or remove tags on an application. Tags are lowercase words; each entry here becomes one tag. Removing a tag that is not present is a no-op."""; return services.applications.tag(application_id,add=add or (),remove=remove or ())
     @mcp.tool(name="applications.get")

@@ -144,11 +144,25 @@ def _migration_4_tags(connection: sqlite3.Connection) -> None:
     connection.execute("ALTER TABLE applications ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
 
 
+def _migration_5_event_kind(connection: sqlite3.Connection) -> None:
+    """Split "automatic" from "hidden" (D6).
+
+    Today an empty `dedupe_key` is both signals at once. Every row that ever
+    got a dedupe key was written by `_record_lifecycle_event` -- a record of
+    something that already happened -- so it backfills as `lifecycle`.
+    Everything else, hand-entered, backfills as the default `manual`. A
+    reminder is a third kind: automatic *and* meant to be seen.
+    """
+    connection.execute("ALTER TABLE events ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual'")
+    connection.execute("UPDATE events SET kind='lifecycle' WHERE dedupe_key<>''")
+
+
 # (target_version, migration) applied in order to any database below target.
 MIGRATIONS: list[tuple[int, Any]] = [
     (2, _migration_2_calendar),
     (3, _migration_3_question_extraction),
     (4, _migration_4_tags),
+    (5, _migration_5_event_kind),
 ]
 
 

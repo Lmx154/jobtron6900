@@ -1,8 +1,25 @@
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from app.services import NotFoundError
+from app.services.timeutil import parse_stored, to_local
 from .helpers import redirect, services, templates
+
+
+def _activity_line(svc, application_id: int) -> str:
+    """'Last activity N days ago · next: {event_type} on {date}' for the detail page."""
+    now = datetime.now(UTC)
+    last_activity_moment, _ = parse_stored(svc.applications.last_activity_at(application_id))
+    days = (now - last_activity_moment).days if last_activity_moment else 0
+    line = f"Last activity {days} day{'s' if days != 1 else ''} ago"
+    next_event = svc.applications.next_event(application_id)
+    if next_event:
+        local_moment = to_local(next_event["starts_at_utc"])
+        if local_moment:
+            line += f" · next: {next_event['event_type']} on {local_moment.strftime('%b %d')}"
+    return line
 
 router=APIRouter(prefix="/applications")
 
@@ -34,7 +51,7 @@ def workspace(application_id:int,request:Request):
     svc=services(request)
     try: context=svc.applications.get_context(application_id)
     except NotFoundError as exc: raise HTTPException(404,str(exc)) from exc
-    return templates(request).TemplateResponse(request,"applications/detail.html",{"context":context,"statuses":svc.applications.STATUSES,"archive":svc.applications.get_archive(application_id),"question_bank":svc.questions.search_bank("",20),"autofill":svc.applications.autofill_options(application_id)})
+    return templates(request).TemplateResponse(request,"applications/detail.html",{"context":context,"statuses":svc.applications.STATUSES,"archive":svc.applications.get_archive(application_id),"question_bank":svc.questions.search_bank("",20),"autofill":svc.applications.autofill_options(application_id),"activity_line":_activity_line(svc,application_id)})
 
 
 @router.post("/{application_id}/autofill-plan")

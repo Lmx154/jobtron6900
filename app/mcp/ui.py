@@ -70,6 +70,10 @@ _APPLICATIONS_UI_TEMPLATE = r"""
     .check.pending .check-mark { background: var(--amber-soft); color: var(--amber); }
     .check small { color: var(--muted); }
     .empty { color: var(--muted); font-style: italic; padding: 14px 0; }
+    .today-row { display: flex; align-items: flex-start; gap: 10px; border-top: 1px solid var(--line); padding: 10px 2px; }
+    .today-row:first-child { border-top: 0; padding-top: 0; }
+    .today-row .pill { flex: 0 0 auto; }
+    .today-row .today-reason { color: var(--muted); font-size: 12px; margin-top: 3px; }
     .notice { color: var(--muted); font-size: 12px; margin-top: 12px; line-height: 1.45; }
     .wizard-options { display: grid; gap: 9px; margin-top: 16px; }
     .wizard-option { display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
@@ -199,6 +203,27 @@ _APPLICATIONS_UI_TEMPLATE = r"""
         <p class="lede">${escapeHtml(lede)}</p>`;
     }
 
+    function renderAttention(attention) {
+      const buckets = [
+        ["upcoming", "Upcoming"],
+        ["follow_up_due", "Follow-up due"],
+        ["stale", "Stale"],
+        ["idle_drafts", "Idle drafts"],
+      ];
+      const rows = buckets.flatMap(([key, label]) => (attention?.[key] ?? []).map((row) => ({ ...row, bucketLabel: label })));
+      if (!rows.length) return "";
+      const items = rows.map((row) => `
+        <div class="today-row">
+          <span class="pill">${escapeHtml(row.bucketLabel)}</span>
+          <div>
+            <div class="title">${escapeHtml(row.company_name)} · ${escapeHtml(row.formal_title)}</div>
+            <div class="today-reason">${escapeHtml(row.reason)}</div>
+            ${tagChips(row.tags)}
+          </div>
+        </div>`).join("");
+      return `<section class="panel"><h2>Today</h2><div class="list">${items}</div></section>`;
+    }
+
     function renderList(data) {
       const applications = data.applications ?? [];
       const counts = data.counts ?? {};
@@ -224,6 +249,7 @@ _APPLICATIONS_UI_TEMPLATE = r"""
       root.innerHTML = `
         ${header("Agent workspace", data.title ?? "Your applications", data.summary ?? "A reviewable snapshot of the work Jobtron is managing with you.")}
         ${data.frontend_url ? `<div class="actions"><a class="button secondary" href="${escapeHtml(data.frontend_url)}" target="_blank" rel="noreferrer">Open live frontend</a></div>` : ""}
+        ${renderAttention(data.attention)}
         <div class="stats">${stats}</div>
         <section class="panel">
           <h2>${escapeHtml(data.filter_label ?? "Current work")}</h2>

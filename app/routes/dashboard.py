@@ -77,6 +77,7 @@ def dashboard(request: Request, month: str | None = None, status: str | None = N
         "this_month": f"{today.year:04d}-{today.month:02d}",
         "status_suffix": status_suffix,
         "upcoming": svc.events.upcoming(10),
+        "attention": svc.applications.attention(),
         "statuses": svc.applications.STATUSES,
         "status_colors": STATUS_COLORS,
         "selected_status": status,
