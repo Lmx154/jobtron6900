@@ -9,7 +9,7 @@ from contextlib import ExitStack, asynccontextmanager
 from dataclasses import replace
 from hashlib import sha256
 from threading import Thread
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
@@ -359,7 +359,7 @@ Never mark an application Applied until the user says they submitted it themselv
             }
 
     @mcp.tool(name="questions.extract_from_posting",structured_output=True)
-    def questions_extract_from_posting(application_id:int) -> dict[str,Any]:
+    def questions_extract_from_posting(application_id:int,retry:bool=False) -> dict[str,Any]:
         """Fetch this application's saved job-posting URL and list any application questions on it.
 
         CALL WHEN: workflow.next returns step_id "extract_questions".
@@ -367,6 +367,9 @@ Never mark an application Applied until the user says they submitted it themselv
         RETURNS: status ("ok" | "blocked" | "empty" | "error"), detected_questions, and say_to_user.
         A status other than "ok" is a normal outcome, not a failure: relay say_to_user and let the
         user paste the questions or upload screenshots.
+        Pass retry=true to clear a previously recorded status and fetch again. Otherwise, if a status
+        is already recorded, it is returned from cache (cached=true, detected_questions=[]) with no
+        network call.
         """
         application=services.applications.get(application_id)
         url=(application["url"] or "").strip()
@@ -375,9 +378,21 @@ Never mark an application Applied until the user says they submitted it themselv
             return {"status":"error","detected_questions":[],"reason":"No posting URL is saved.",
                     "say_to_user":"There is no link saved for this application. Paste the application questions, or tell me there are none.",
                     "frontend_url":f"{frontend_base_url}/applications/{application_id}","must_share_url":True}
+        assets_url=f"{frontend_base_url}/applications/{application_id}#assets"
+        if retry:
+            services.applications.record_question_extraction(application_id,"","")
+        elif application["questions_extraction_status"]:
+            status=application["questions_extraction_status"]; note=application["questions_extraction_note"]
+            if status=="ok":
+                say="I already read this posting and recorded its questions. Call again with retry=true to re-fetch it."
+            else:
+                say=(f"I could not read the application questions from that page. {note} "
+                     f"Paste them here, drop screenshots at {assets_url}, or tell me there are none.")
+            return {"status":status,"detected_questions":[],"reason":note,"cached":True,
+                    "say_to_user":say,"assets_url":assets_url,
+                    "frontend_url":f"{frontend_base_url}/applications/{application_id}","must_share_url":True}
         result=fetch_posting(url)
         services.applications.record_question_extraction(application_id,result["status"],result["reason"])
-        assets_url=f"{frontend_base_url}/applications/{application_id}#assets"
         if result["status"]=="ok" and result["detected_questions"]:
             say=f"I found {len(result['detected_questions'])} possible application question(s) on that page."
         elif result["status"]=="ok":
@@ -385,7 +400,28 @@ Never mark an application Applied until the user says they submitted it themselv
         else:
             say=(f"I could not read the application questions from that page. {result['reason']} "
                  f"Paste them here, drop screenshots at {assets_url}, or tell me there are none.")
-        return {**result,"say_to_user":say,"assets_url":assets_url,
+        return {**result,"cached":False,"say_to_user":say,"assets_url":assets_url,
+                "frontend_url":f"{frontend_base_url}/applications/{application_id}","must_share_url":True}
+
+    @mcp.tool(name="questions.detect_from_text",structured_output=True)
+    def questions_detect_from_text(application_id:int,page_text:str,source:Literal["browser","paste"]) -> dict[str,Any]:
+        """Use when the server could not fetch the posting: pass the page's visible text, read with
+        your own browser tool (source='browser') or pasted by the user (source='paste'). Never invent text.
+
+        CALL WHEN: workflow.next returns step_id "capture_page_text".
+        RETURNS: detected_questions, count, stored_job_description, extraction_status, and say_to_user.
+        If it returns questions, add each one with questions.add and then call
+        applications.set_questions_reviewed. If it returns none, call workflow.next again and relay
+        what it says.
+        """
+        result=services.questions.detect_from_text(application_id,page_text,source)
+        if result["count"]:
+            say=f"I found {result['count']} possible application question(s) on that page."
+        elif result["extraction_status"]=="ok":
+            say="I read the page but found no application questions on it. Paste any you see, or tell me there are none."
+        else:
+            say="That text was empty, so I could not find anything. Paste the page's visible text and I'll try again."
+        return {**result,"say_to_user":say,
                 "frontend_url":f"{frontend_base_url}/applications/{application_id}","must_share_url":True}
 
     @mcp.tool(name="questions.list")

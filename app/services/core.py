@@ -4,11 +4,12 @@ import json
 import re
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 
 from app.db import Database
 from app.services.extraction import extract_document_text
 from app.services.palette import status_color
+from app.services.posting import MAX_BYTES, detect_questions_from_text
 from app.services.timeutil import local_day, local_timezone, parse_stored, to_local, today_local
 from app.storage import FileStorage
 
@@ -314,6 +315,7 @@ class DocumentService:
 class QuestionService:
     def __init__(self, db: Database):
         self.db = db
+        self.services: Services | None = None
 
     @staticmethod
     def _tokens(value: str) -> set[str]:
@@ -494,6 +496,40 @@ class QuestionService:
             source_label=source_label or f"question_bank:{bank_entry_id}",
             approved=approved,
         )
+
+    def detect_from_text(
+        self, application_id: int, page_text: str, source: Literal["browser", "paste"]
+    ) -> dict[str, Any]:
+        """Detect application questions from text the agent supplied, not fetched.
+
+        Phase 5 (D7): for when `fetch_posting` could not read the posting. The
+        agent reads the rendered page with its own browser tool, or the user
+        pastes it, and this runs the same deterministic detection on that text
+        instead of a server-side fetch. Never overwrites a job description
+        that is already on file.
+        """
+        assert self.services
+        application = self.services.applications.get(application_id)
+        text = page_text[:MAX_BYTES]
+        if not text.strip():
+            return {
+                "detected_questions": [],
+                "count": 0,
+                "stored_job_description": False,
+                "extraction_status": application["questions_extraction_status"],
+            }
+        detected = detect_questions_from_text(text)
+        stored_job_description = False
+        if not application["job_description"].strip():
+            self.services.applications.update(application_id, job_description=text)
+            stored_job_description = True
+        self.services.applications.record_question_extraction(application_id, "ok", source)
+        return {
+            "detected_questions": detected,
+            "count": len(detected),
+            "stored_job_description": stored_job_description,
+            "extraction_status": "ok",
+        }
 
 
 class AssetService:
@@ -1265,6 +1301,28 @@ class ApplicationService:
                 "question": "",
                 "url": app["url"],
             }
+        elif (
+            not app["questions_reviewed"]
+            and app["url"].strip()
+            and app["questions_extraction_status"] in {"blocked", "empty", "error"}
+        ):
+            # D7: the server's own fetch failed honestly; hand the read to the
+            # agent's own browser tool (or a paste) instead of retrying the
+            # same server-side fetch that just failed.
+            next_action = {
+                "code": "capture_page_text",
+                "requires_user_input": False,
+                "instruction": (
+                    "Read the posting with your own browser tool, or ask the user to paste it, "
+                    "then call questions.detect_from_text."
+                ),
+                "question": (
+                    f"I couldn't read the posting at {app['url']} ({app['questions_extraction_status']}). "
+                    f"Paste the page text here and I'll pull the questions out."
+                ),
+                "url": app["url"],
+                "extraction_status": app["questions_extraction_status"],
+            }
         elif not app["questions_reviewed"]:
             attempted = app["questions_extraction_status"]
             assets_url = f"{self.services.base_url}/applications/{application_id}#assets"
@@ -1814,4 +1872,4 @@ class Services:
         self.db=db; self.storage=storage; self.base_url=base_url.rstrip("/")
         self.documents=DocumentService(db,storage); self.candidate=CandidateService(db); self.questions=QuestionService(db); self.assets=AssetService(db,storage); self.events=EventService(db); self.applications=ApplicationService(db)
         self.candidate.documents=self.documents; self.candidate.services=self
-        self.applications.services=self; self.events.services=self
+        self.applications.services=self; self.events.services=self; self.questions.services=self

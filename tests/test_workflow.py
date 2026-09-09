@@ -110,10 +110,12 @@ def test_progress_gates_on_candidate_setup_before_anything_else(services):
     # The posting has a URL and has not been scraped yet, so Jobtron tries that first.
     assert progress["next_action"]["code"]=="extract_questions"
     services.applications.record_question_extraction(app["id"],"empty","The page rendered in JavaScript.")
+    # Phase 5 (D7): a failed server-side fetch hands the read to the agent's own
+    # browser tool, or a paste, instead of jumping straight to "no questions found".
     fallback=services.applications.progress(app["id"])["next_action"]
-    assert fallback["code"]=="inventory_questions"
-    assert "screenshots" in fallback["question"]
-    assert fallback["assets_url"].endswith("#assets")
+    assert fallback["code"]=="capture_page_text"
+    assert fallback["url"]==app["url"]
+    assert fallback["extraction_status"]=="empty"
 
 
 def test_progress_returns_completeness_blockers_and_next_question(ready_services):

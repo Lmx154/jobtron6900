@@ -1,7 +1,10 @@
 """Phase 2: the engine must emit exactly one step, from a closed set, deterministically."""
 
+import asyncio
+
 import pytest
 
+from app.mcp.server import build_server
 from app.services.core import ApplicationService, NotFoundError
 from app.services.workflow import STEP_IDS, STEP_MAP, find_by_url, next_step
 
@@ -10,8 +13,9 @@ def test_every_progress_code_maps_to_a_step():
     """No next_action code may fall through to a default the agent cannot act on."""
     known = {
         "capture_job_description", "complete_candidate_setup", "consider_academic_documents",
-        "extract_questions", "inventory_questions", "answer_required_question", "prepare_resume",
-        "prepare_cover_letter", "review_drafts", "confirm_submission", "post_submission_follow_up",
+        "extract_questions", "capture_page_text", "inventory_questions", "answer_required_question",
+        "prepare_resume", "prepare_cover_letter", "review_drafts", "confirm_submission",
+        "post_submission_follow_up",
     }
     assert set(STEP_MAP) == known
 
@@ -20,7 +24,7 @@ def test_then_call_is_always_null_or_a_real_tool():
     allowed = {
         "applications.create", "applications.update", "documents.save", "documents.mark_considered",
         "question_bank.search", "questions.add", "applications.set_questions_reviewed",
-        "questions.extract_from_posting",
+        "questions.extract_from_posting", "questions.detect_from_text",
     }
     for step_id, then_call, you_must, say_template in STEP_MAP.values():
         assert step_id in STEP_IDS
@@ -324,3 +328,110 @@ def test_an_applied_application_is_never_asked_for_questions_or_drafts_again(rea
     assert "Tailored resume approved" in progress["blocking_items"]
     assert "Required questions answered" in progress["blocking_items"]
     assert services.questions.list(app["id"])[0]["answers"] == [], "nothing is written after Applied"
+
+
+# Phase 5 · D7: page capture through the agent's own browser, never the server's.
+
+
+def _application_with_a_failed_fetch(services, status="blocked", note="The site refused the request (HTTP 403)."):
+    app = services.applications.create(
+        "Boeing", "GNC Engineer", url="https://jobs.boeing.com/job/1", job_description="Build GNC"
+    )
+    services.applications.record_question_extraction(app["id"], status, note)
+    return app
+
+
+def test_a_blocked_extraction_status_routes_to_capture_page_text_not_inventory_questions(ready_services):
+    services = ready_services
+    app = _application_with_a_failed_fetch(services)
+
+    step = next_step(services, app["id"])
+
+    assert step["step_id"] == "capture_page_text"
+    assert step["then_call"] == "questions.detect_from_text"
+    assert step["waits_for_user"] is False
+
+
+def test_after_detect_from_text_finds_questions_capture_page_text_does_not_recur(ready_services):
+    services = ready_services
+    app = _application_with_a_failed_fetch(services)
+    assert next_step(services, app["id"])["step_id"] == "capture_page_text"
+
+    result = services.questions.detect_from_text(
+        app["id"], "Why do you want to work here?\nDesign and validate GNC systems.", "browser"
+    )
+    assert result["count"] == 1
+    assert result["extraction_status"] == "ok"
+    for question_text in result["detected_questions"]:
+        services.questions.add(app["id"], question_text, required_field=True)
+    services.applications.set_questions_reviewed(app["id"])
+
+    step = next_step(services, app["id"])
+    assert step["step_id"] != "capture_page_text"
+    assert step["step_id"] == "answer_question", "the added question flows into the existing answer step"
+
+
+def test_after_detect_from_text_finds_nothing_the_next_step_is_inventory_questions(ready_services):
+    services = ready_services
+    app = _application_with_a_failed_fetch(
+        services, status="empty", note="The page rendered its content with JavaScript."
+    )
+    assert next_step(services, app["id"])["step_id"] == "capture_page_text"
+
+    result = services.questions.detect_from_text(
+        app["id"], "Just some plain page text with no questions anywhere on it.", "paste"
+    )
+    assert result["count"] == 0
+    assert result["extraction_status"] == "ok", "a zero-question paste still records a clean extraction"
+
+    step = next_step(services, app["id"])
+    assert step["step_id"] == "inventory_questions"
+
+
+def test_retry_true_clears_a_recorded_status_and_refetches(ready_services, monkeypatch):
+    services = ready_services
+    app = _application_with_a_failed_fetch(services)
+    calls = []
+
+    def fake_fetch(url, timeout=10.0):
+        calls.append(url)
+        return {
+            "status": "ok", "url": url, "text": "Design GNC systems.",
+            "detected_questions": ["Why do you want to work here?"], "reason": "Retrieved.", "ats_markers": [],
+        }
+
+    import app.mcp.server as server_module
+
+    monkeypatch.setattr(server_module, "fetch_posting", fake_fetch)
+    mcp = build_server(services)
+
+    result = asyncio.run(
+        mcp.call_tool("questions.extract_from_posting", {"application_id": app["id"], "retry": True})
+    )
+
+    assert calls == ["https://jobs.boeing.com/job/1"], "retry=true must still fetch, exactly once"
+    assert result.structured_content["status"] == "ok"
+    assert result.structured_content.get("cached") is not True
+    assert services.applications.get(app["id"])["questions_extraction_status"] == "ok"
+
+
+def test_retry_false_with_a_recorded_status_is_cached_and_never_touches_the_network(ready_services, monkeypatch):
+    services = ready_services
+    app = _application_with_a_failed_fetch(services)
+    calls = []
+
+    def fake_fetch(url, timeout=10.0):
+        calls.append(url)
+        return {"status": "ok", "url": url, "text": "", "detected_questions": [], "reason": "", "ats_markers": []}
+
+    import app.mcp.server as server_module
+
+    monkeypatch.setattr(server_module, "fetch_posting", fake_fetch)
+    mcp = build_server(services)
+
+    result = asyncio.run(mcp.call_tool("questions.extract_from_posting", {"application_id": app["id"]}))
+
+    assert calls == [], "a recorded status without retry must never call fetch_posting"
+    assert result.structured_content["cached"] is True
+    assert result.structured_content["status"] == "blocked"
+    assert result.structured_content["detected_questions"] == []

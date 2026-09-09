@@ -130,6 +130,25 @@ def detect_questions(text: str, labels: list[str]) -> list[str]:
     return unique[:40]
 
 
+def detect_questions_from_text(text: str) -> list[str]:
+    """Run `detect_questions` on text the server did not fetch itself.
+
+    Phase 5: the agent's own browser tool, or a user paste, supplies `text`
+    instead of `fetch_posting`. It may still be raw HTML (a saved page) or
+    plain visible text (what a browser tool reads back), so both are
+    accepted: HTML is reduced to text and labels first; anything else is
+    treated as plain text lines with no separate label set.
+    """
+    if "<" in text and ">" in text:
+        parser = _TextExtractor()
+        try:
+            parser.feed(text)
+        except Exception:
+            pass
+        return detect_questions(parser.text(), parser.labels)
+    return detect_questions(text, [])
+
+
 def fetch_posting(url: str, timeout: float = TIMEOUT_SECONDS) -> dict:
     """Retrieve a posting. Never raises."""
     result = {"status": "error", "url": url, "text": "", "detected_questions": [], "reason": ""}

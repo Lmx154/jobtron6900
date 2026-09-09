@@ -54,6 +54,20 @@ STEP_MAP: dict[str, tuple[str, str | None, str, str | None]] = {
         "call workflow.next again and relay what it says.",
         "Checking the posting for application questions.",
     ),
+    # D7: this step's wait depends on the client (does it have a browser tool?),
+    # not on server state, so it is a deliberate, documented exception to
+    # "working steps narrate, stopping steps ask" -- it narrates (then_call is
+    # set, waits_for_user reports False) even though the paste fallback inside
+    # you_must may, in practice, leave the agent stopped and waiting.
+    "capture_page_text": (
+        "capture_page_text",
+        "questions.detect_from_text",
+        "If you have a browser tool, open next_action.url, read the page's visible text, and call "
+        "questions.detect_from_text with source='browser'. If you have no browser tool, say say_to_user "
+        "word for word and stop; when the user pastes the page, call questions.detect_from_text with "
+        "source='paste'. Then call workflow.next again.",
+        "Reading the posting page for application questions.",
+    ),
     "inventory_questions": (
         "inventory_questions",
         None,

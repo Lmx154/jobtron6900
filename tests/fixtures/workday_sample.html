@@ -1,0 +1,29 @@
+<!--
+Phase 5 (D7): a small synthetic Workday-like posting page, saved as a static
+fixture so tests never fetch anything from the network. It carries the
+Workday ATS marker (data-automation-id), a job description long enough to
+pass fetch_posting's own length floor, and three question-like lines that
+appear both as visible label text and as aria-labels on their inputs, so
+detect_questions has to deduplicate them -- exactly like a real posting.
+-->
+<html>
+<head><title>Guidance, Navigation, and Control Engineer</title></head>
+<body>
+  <div data-automation-id="jobPostingHeader">
+    <h1>Guidance, Navigation, and Control Engineer</h1>
+  </div>
+  <div data-automation-id="jobPostingDescription">
+    <p>Design and validate guidance, navigation and control systems for next-generation spacecraft.</p>
+    <p>Collaborate with systems engineers to define requirements and verify performance against them
+    across every mission phase, from concept review through flight operations support.</p>
+  </div>
+  <div data-automation-id="applicationQuestions">
+    <div><label for="q1">Why do you want to work at this company?</label>
+    <input id="q1" aria-label="Why do you want to work at this company?" type="text"></div>
+    <div><label for="q2">Are you legally authorized to work in the United States?</label>
+    <input id="q2" aria-label="Are you legally authorized to work in the United States?" type="text"></div>
+    <div><label for="q3">Are you willing to relocate for this position?</label>
+    <input id="q3" aria-label="Are you willing to relocate for this position?" type="text"></div>
+  </div>
+</body>
+</html>
