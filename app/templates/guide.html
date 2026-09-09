@@ -1,79 +1,73 @@
 {% extends "base.html" %}
-{% block title %}Use with Codex · Jobtron{% endblock %}
+{% block title %}MCP Setup · Jobtron{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/guide.css"><script src="/static/guide.js" defer></script>{% endblock %}
 {% block content %}
 <div class="guide-hero">
   <div>
-    <p class="eyebrow">Agent first · UI on demand</p>
-    <h1>Use Jobtron with Codex</h1>
-    <p class="lede">Tell Codex the outcome you want. Jobtron keeps the records, the agent does the work, and a focused UI appears when there is something for you to inspect or confirm.</p>
+    <p class="eyebrow">One workspace · three clients</p>
+    <h1>Install Jobtron as an MCP server</h1>
+    <p class="lede">Jobtron exposes the same tools and shared application history to Codex, OpenCode, and Claude Code. Install it once per client, then use only one client or agent session at a time.</p>
   </div>
-  <div class="connection-card"><span class="status-dot"></span><div><strong>Codex server name</strong><code>jobtron6900</code></div></div>
+  <div class="connection-card"><span class="status-dot"></span><div><strong>MCP server name</strong><code>jobtron6900</code></div></div>
 </div>
 
 <section class="guide-section">
-  <div class="section-heading"><span>01</span><div><p class="eyebrow">First use</p><h2>Connect, restart, verify</h2></div></div>
+  <div class="section-heading"><span>01</span><div><p class="eyebrow">Recommended setup</p><h2>One command configures every client</h2></div></div>
+  <div class="command-row"><pre id="install-command"><code>uv sync --extra test
+uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button class="copy-button" data-copy-target="install-command">Copy</button></div>
+  <p class="quiet">The installer safely copies legacy repository data into the shared user data directory when needed, preserves the original as a backup, and writes user-level MCP entries. Select fewer clients with <code>--clients codex</code>, <code>--clients opencode</code>, or <code>--clients claude</code>.</p>
   <div class="step-grid">
-    <article class="guide-card"><b>1</b><h3>Restart Codex</h3><p>Codex loads newly installed MCP servers when the client starts. Restart the desktop app or IDE extension, or begin a fresh CLI session.</p></article>
-    <article class="guide-card"><b>2</b><h3>Check the server</h3><p>In Codex CLI, run <code>/mcp</code>. In the app or IDE, open Settings → MCP servers and look for <strong>jobtron6900</strong>.</p></article>
-    <article class="guide-card"><b>3</b><h3>Ask naturally</h3><p>You do not need to name every tool. Tell Codex to use Jobtron and describe the outcome you want.</p></article>
-  </div>
-  <div class="command-row"><pre id="verify-command"><code>codex mcp get jobtron6900</code></pre><button class="copy-button" data-copy-target="verify-command">Copy</button></div>
-  <p class="quiet">Codex starts the STDIO server on demand. Do not launch a separate workstation: the agent presents Jobtron's review UI inline when it is useful.</p>
-</section>
-
-<section class="guide-section">
-  <div class="section-heading"><span>02</span><div><p class="eyebrow">Recommended loop</p><h2>Move through an application</h2></div></div>
-  <ol class="workflow">
-    <li><div><strong>State the outcome</strong><p>Share a posting, ask to continue existing work, or ask to see the applications Jobtron has made with you.</p></div></li>
-    <li><div><strong>Let the agent assemble context</strong><p>Codex discovers the application, reads candidate sources, records the posting, and follows Jobtron's explicit next action.</p></div></li>
-    <li><div><strong>Review the result</strong><p>After meaningful work, Codex calls <code>ui.show_application</code>. Jobtron presents the authoritative state, readiness checks, and proposed next move.</p></div></li>
-    <li><div><strong>Confirm or revise</strong><p>Your choice returns to the conversation. The agent continues, or asks what should change, then presents a fresh review surface.</p></div></li>
-    <li><div><strong>Confirm submission</strong><p>Only after you confirm external submission may the agent mark the application <em>Applied</em> and freeze its historical snapshot.</p></div></li>
-  </ol>
-</section>
-
-<section class="guide-section">
-  <div class="section-heading"><span>03</span><div><p class="eyebrow">Prompt recipes</p><h2>Good ways to ask Codex</h2></div></div>
-  <div class="prompt-grid">
-    <article class="prompt-card"><header><span>Orient</span><button class="copy-button" data-copy-target="prompt-list">Copy</button></header><pre id="prompt-list"><code>Use Jobtron to list my active applications. Summarize each one and tell me which workspace needs attention first. Do not change anything.</code></pre></article>
-    <article class="prompt-card"><header><span>Evaluate fit</span><button class="copy-button" data-copy-target="prompt-fit">Copy</button></header><pre id="prompt-fit"><code>Use Jobtron to open application 3. Compare the job requirements with my candidate facts and master resume. Identify strong matches, honest gaps, and the three most valuable improvements. Do not write changes yet.</code></pre></article>
-    <article class="prompt-card"><header><span>Continue application</span><button class="copy-button" data-copy-target="prompt-answer">Copy</button></header><pre id="prompt-answer"><code>Use the complete context for application 3. Report its progress and blockers, take the next safe action, search the question bank before drafting answers, then ask me the single next question needed to keep moving.</code></pre></article>
-    <article class="prompt-card"><header><span>Tailor resume</span><button class="copy-button" data-copy-target="prompt-resume">Copy</button></header><pre id="prompt-resume"><code>Use application 3 and my candidate context to create a truthful tailored resume. Save it as a new unapproved application_resume document. Preserve concrete evidence and never invent experience.</code></pre></article>
-    <article class="prompt-card"><header><span>Cover letter</span><button class="copy-button" data-copy-target="prompt-letter">Copy</button></header><pre id="prompt-letter"><code>Draft a concise cover letter for application 3 using only facts available in Jobtron. Save it as a new unapproved cover_letter document with a clear title.</code></pre></article>
-    <article class="prompt-card"><header><span>Final audit</span><button class="copy-button" data-copy-target="prompt-audit">Copy</button></header><pre id="prompt-audit"><code>Audit application 3 as a complete package. Check the job description, approved resume and cover letter, questions, current answers, and assets. Report omissions, contradictions, weak evidence, and anything I should review before submitting. Do not modify records.</code></pre></article>
+    <article class="guide-card"><b>1</b><h3>Close active clients</h3><p>Close every Codex, OpenCode, or Claude Code session currently using Jobtron so migration starts from a stable source.</p></article>
+    <article class="guide-card"><b>2</b><h3>Run setup</h3><p>Run the command above from the Jobtron repository. It detects absolute executable paths and configures each selected client.</p></article>
+    <article class="guide-card"><b>3</b><h3>Restart and verify</h3><p>Start one client, check it with the client-specific command below, then ask your agent to show the Jobtron dashboard.</p></article>
   </div>
 </section>
 
 <section class="guide-section">
-  <div class="section-heading"><span>04</span><div><p class="eyebrow">What happens where</p><h2>Codex tools and UI results</h2></div></div>
+  <div class="section-heading"><span>02</span><div><p class="eyebrow">Client verification</p><h2>The launch command and data are shared</h2></div></div>
   <div class="tool-map">
-    <div><h3>Read context and progress</h3><code>candidate.get_context</code><code>applications.get_context</code><code>applications.progress</code><p>Codex sees academic sources, materials, explicit blockers, and the next action without manual copy/paste.</p></div>
-    <div><h3>Create versions</h3><code>answers.save</code><code>documents.save</code><p>Drafts become visible in the Questions or Documents section. Existing versions are never overwritten.</p></div>
-    <div><h3>Reuse prior answers</h3><code>question_bank.search</code><code>question_bank.apply</code><code>applications.set_questions_reviewed</code><p>Wording variants can reuse an approved canonical answer, while each application keeps its own question and answer history.</p></div>
-    <div><h3>Read uploads</h3><code>assets.get</code><code>documents.get</code><p>Metadata includes a resource URI so Codex can consume screenshots, PDFs, resumes, and other uploaded files.</p></div>
-    <div><h3>Present for review</h3><code>ui.show_applications</code><code>ui.show_application</code><p>Only these presentation tools render UI. Data and mutation tools stay agent-facing so intermediate work does not repeatedly open the interface.</p></div>
+    <div><h3>Codex</h3><code>codex mcp get jobtron6900</code><p>Codex stores user MCP configuration in <code>~/.codex/config.toml</code>. Use <code>/mcp</code> inside a session to inspect status.</p></div>
+    <div><h3>OpenCode</h3><code>opencode mcp list</code><p>Jobtron is merged into <code>~/.config/opencode/opencode.json</code> as a local MCP server.</p></div>
+    <div><h3>Claude Code</h3><code>claude mcp get jobtron6900</code><p>The installer adds Jobtron at user scope. Use <code>/mcp</code> inside Claude Code to inspect status.</p></div>
+    <div><h3>Shared source of truth</h3><code>{{ data_dir }}</code><p>Every installed client receives the same explicit <code>JOBTRON_DATA_DIR</code>, so applications, documents, and answers remain consistent.</p></div>
+  </div>
+</section>
+
+<section class="guide-section">
+  <div class="section-heading"><span>03</span><div><p class="eyebrow">Open the interface</p><h2>The agent should always give you this link</h2></div></div>
+  <div class="command-row"><pre id="dashboard-link"><code>{{ dashboard_url }}</code></pre><button class="copy-button" data-copy-target="dashboard-link">Copy</button></div>
+  <p><a class="button" href="{{ dashboard_url }}">Open the live Jobtron dashboard</a></p>
+  <p class="quiet">The MCP tool <code>ui.show_dashboard</code> returns current applications and this exact frontend URL. Even clients that cannot render MCP Apps inline can open the browser dashboard.</p>
+</section>
+
+<section class="guide-section">
+  <div class="section-heading"><span>04</span><div><p class="eyebrow">Good prompts</p><h2>Ask any supported agent the same way</h2></div></div>
+  <div class="prompt-grid">
+    <article class="prompt-card"><header><span>Open dashboard</span><button class="copy-button" data-copy-target="prompt-dashboard">Copy</button></header><pre id="prompt-dashboard"><code>Use Jobtron to show me the dashboard with the jobs we have applied to. Include the live frontend link.</code></pre></article>
+    <article class="prompt-card"><header><span>Continue work</span><button class="copy-button" data-copy-target="prompt-continue">Copy</button></header><pre id="prompt-continue"><code>Use Jobtron to continue my most urgent application. Report progress and blockers, take the next safe action, and show the refreshed application when finished.</code></pre></article>
+    <article class="prompt-card"><header><span>Evaluate fit</span><button class="copy-button" data-copy-target="prompt-fit">Copy</button></header><pre id="prompt-fit"><code>Use Jobtron to compare this application with my candidate facts, resume, and enabled academic documents. Identify strong matches and honest gaps without changing anything.</code></pre></article>
+    <article class="prompt-card"><header><span>Final audit</span><button class="copy-button" data-copy-target="prompt-audit">Copy</button></header><pre id="prompt-audit"><code>Audit this Jobtron application as a complete package. Report omissions, contradictions, weak evidence, and anything I should review before submitting.</code></pre></article>
   </div>
 </section>
 
 <section class="guide-section review-section">
-  <div class="section-heading"><span>05</span><div><p class="eyebrow">Human review</p><h2>Keep these boundaries</h2></div></div>
+  <div class="section-heading"><span>05</span><div><p class="eyebrow">Ownership guard</p><h2>Only one client can own Jobtron</h2></div></div>
   <div class="review-grid">
-    <div><strong>Codex may prepare</strong><p>Analysis, question records, answer drafts, resume versions, cover letters, and package audits.</p></div>
-    <div><strong>You confirm</strong><p>The agent presents facts, wording, final document versions, application answers, readiness, and its proposed next move for review.</p></div>
-    <div><strong>You submit</strong><p>Employer forms remain manual. Mark Applied only after submission so the archive reflects reality.</p></div>
+    <div><strong>One MCP process</strong><p>An operating-system lock prevents Codex, OpenCode, Claude Code, or a second session from opening the same Jobtron store concurrently.</p></div>
+    <div><strong>Clear conflict message</strong><p>If Jobtron is already active, the second client reports which client and process owns it instead of racing SQLite or borrowing another frontend.</p></div>
+    <div><strong>Automatic release</strong><p>Closing the owning client releases the operating-system lock. A crash cannot leave a permanently locked database.</p></div>
   </div>
 </section>
 
 <section class="guide-section troubleshooting">
-  <div class="section-heading"><span>06</span><div><p class="eyebrow">Troubleshooting</p><h2>If Jobtron is missing in Codex</h2></div></div>
+  <div class="section-heading"><span>06</span><div><p class="eyebrow">Diagnostics</p><h2>If Jobtron does not connect</h2></div></div>
+  <div class="command-row"><pre id="doctor-command"><code>uv run jobtron-setup doctor</code></pre><button class="copy-button" data-copy-target="doctor-command">Copy</button></div>
   <ul>
-    <li>Restart Codex after installation, then check <code>/mcp</code> or Settings → MCP servers.</li>
-    <li>Run <code>codex mcp get jobtron6900</code> and confirm it is enabled.</li>
-    <li>If the project moved, reinstall the server because its command uses an absolute path.</li>
-    <li>From the project directory, run <code>uv sync --extra test</code> if the virtual environment was removed.</li>
-    <li>Back up <code>data/app.db</code> and <code>data/files/</code> together.</li>
+    <li>Close every other Jobtron-enabled client or session, then restart one client.</li>
+    <li>Run the client-specific verification command from section 02.</li>
+    <li>Run <code>uv run jobtron-setup status</code> to compare legacy, canonical, and runtime data paths.</li>
+    <li>If port 8765 is occupied, close that process or set the same <code>JOBTRON_PORT</code> in the client configuration.</li>
+    <li>The installer backs up an existing OpenCode configuration before rewriting it and never deletes application data during uninstall.</li>
   </ul>
-  <p class="quiet">For Codex configuration details, see the <a href="https://developers.openai.com/codex/mcp/" target="_blank" rel="noreferrer">official OpenAI MCP documentation</a>.</p>
 </section>
 {% endblock %}

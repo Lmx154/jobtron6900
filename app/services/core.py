@@ -2,12 +2,26 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.db import Database
 from app.services.extraction import extract_document_text
+from app.services.palette import status_color
+from app.services.timeutil import local_day, local_timezone, parse_stored, to_local, today_local
 from app.storage import FileStorage
+
+
+# The closed set of profile fields Jobtron treats as "basic information".
+# A small model reads this decision as a boolean, so the predicate must be exact.
+REQUIRED_PROFILE_FIELDS = ("name", "email", "phone", "location")
+
+PROFILE_FIELD_LABELS = {
+    "name": "name",
+    "email": "email",
+    "phone": "phone number",
+    "location": "location",
+}
 
 
 class NotFoundError(LookupError): pass
@@ -19,7 +33,10 @@ def required(row: dict[str, Any] | None, kind: str) -> dict[str, Any]:
 
 
 class CandidateService:
-    def __init__(self, db: Database): self.db = db; self.documents: DocumentService | None = None
+    def __init__(self, db: Database):
+        self.db = db
+        self.documents: DocumentService | None = None
+        self.services: "Services | None" = None
 
     def get_profile(self): return required(self.db.one("SELECT * FROM candidates WHERE id=1"), "candidate")
     def update_profile(self, **fields):
@@ -37,6 +54,72 @@ class CandidateService:
         merged = {key: fields.get(key, current[key]) for key in allowed}; merged["verified"] = int(bool(merged["verified"]))
         self.db.execute(f"UPDATE candidate_facts SET {', '.join(f'{key}=?' for key in allowed)},updated_at=CURRENT_TIMESTAMP WHERE id=?", (*[merged[k] for k in allowed],fact_id))
         return required(self.db.one("SELECT * FROM candidate_facts WHERE id=?", (fact_id,)), "fact")
+    def readiness(self):
+        """Global candidate capability. Independent of any single application.
+
+        Returns a closed `capability` enum plus the exact gaps, so the agent
+        never has to infer what the user is missing.
+        """
+        assert self.documents
+        base_url = self.services.base_url if self.services else ""
+        profile = self.get_profile()
+        missing = [
+            field for field in REQUIRED_PROFILE_FIELDS
+            if not str(profile.get(field) or "").strip()
+        ]
+        master_resumes = self.documents.list(None, "master_resume")
+        approved_resumes = [document for document in master_resumes if document["approved"]]
+        profile_complete = not missing
+        master_resume_available = bool(approved_resumes)
+
+        if profile_complete and master_resume_available:
+            capability = "full"
+        elif profile_complete or master_resume_available:
+            capability = "partial"
+        else:
+            capability = "draft_only"
+
+        setup_url = f"{base_url}/profile"
+        blocked_by = ([] if master_resume_available else ["master_resume"]) + [
+            f"profile.{field}" for field in missing
+        ]
+        gap = self.gap_phrase(missing, master_resume_available)
+        say_to_user = (
+            f"You are set up: your profile is complete and you have a master resume on file."
+            if capability == "full"
+            else (
+                f"Before I can build an application, {gap}. "
+                f"Open {setup_url} to upload your master resume and fill in your basic information, "
+                f"then tell me you are done."
+            )
+        )
+        return {
+            "capability": capability,
+            "profile_complete": profile_complete,
+            "missing_profile_fields": missing,
+            "master_resume_available": master_resume_available,
+            "master_resume_count": len(master_resumes),
+            "blocked_by": blocked_by,
+            "gap_phrase": gap,
+            "setup_url": setup_url,
+            "say_to_user": say_to_user,
+            "must_share_url": capability != "full",
+        }
+
+    @staticmethod
+    def gap_phrase(missing_fields: list[str], master_resume_available: bool) -> str:
+        """Human-readable statement of the gap, reused verbatim by the agent."""
+        parts = []
+        if not master_resume_available:
+            parts.append("you have no master resume saved")
+        if missing_fields:
+            labels = [PROFILE_FIELD_LABELS.get(field, field) for field in missing_fields]
+            listed = labels[0] if len(labels) == 1 else f"{', '.join(labels[:-1])} and {labels[-1]}"
+            parts.append(f"your profile is missing your {listed}")
+        if not parts:
+            return "your candidate setup is complete"
+        return " and ".join(parts)
+
     def get_context(self):
         assert self.documents
         academic_documents = self.documents.academic()
@@ -44,6 +127,7 @@ class CandidateService:
             document["resource_uri"] = f"jobtron://documents/{document['id']}"
         return {
             "profile": self.get_profile(),
+            "readiness": self.readiness(),
             "facts": self.get_facts(),
             "master_resumes": self.documents.list(None, "master_resume"),
             "academic_documents": academic_documents,
@@ -371,13 +455,143 @@ class AssetService:
 
 
 class EventService:
-    def __init__(self, db: Database): self.db=db
-    def list(self, application_id: int): return self.db.all("SELECT * FROM events WHERE application_id=? ORDER BY occurred_at DESC,id DESC",(application_id,))
-    def calendar(self): return self.db.all("SELECT e.*,a.formal_title,c.name company_name FROM events e JOIN applications a ON a.id=e.application_id JOIN companies c ON c.id=a.company_id ORDER BY occurred_at DESC")
-    def add(self, application_id: int, event_type: str, occurred_at: str, notes: str=""):
-        eid=self.db.execute("INSERT INTO events(application_id,event_type,occurred_at,notes) VALUES(?,?,?,?)",(application_id,event_type,occurred_at,notes)); return required(self.db.one("SELECT * FROM events WHERE id=?",(eid,)),"event")
-    def update(self,event_id:int,event_type:str,occurred_at:str,notes:str=""):
-        self.db.execute("UPDATE events SET event_type=?,occurred_at=?,notes=? WHERE id=?",(event_type,occurred_at,notes,event_id)); return required(self.db.one("SELECT * FROM events WHERE id=?",(event_id,)),"event")
+    """The calendar's data layer.
+
+    Every event carries a canonical UTC instant so the month grid can bucket by
+    local day, plus an optional `dedupe_key` that makes automatic events safe to
+    replay. Hand-entered events leave the key empty and may repeat freely.
+    """
+
+    def __init__(self, db: Database): self.db=db; self.services: "Services | None" = None
+
+    SELECT = """SELECT e.*, a.formal_title, a.status, a.company_id, c.name company_name
+                FROM events e
+                JOIN applications a ON a.id=e.application_id
+                JOIN companies c ON c.id=a.company_id"""
+
+    def _decorate(self, rows: list[dict[str, Any]]):
+        for row in rows:
+            row["color"] = status_color(row["status"])
+            row["local_day"] = local_day(row["starts_at_utc"]) or local_day(row["occurred_at"])
+            moment = to_local(row["starts_at_utc"] or row["occurred_at"])
+            row["local_time"] = "" if row["all_day"] or not moment else moment.strftime("%H:%M")
+            row["local_label"] = moment.strftime("%a %d %b") if moment else ""
+        return rows
+
+    def list(self, application_id: int):
+        return self._decorate(self.db.all(
+            f"{self.SELECT} WHERE e.application_id=? ORDER BY e.starts_at_utc DESC, e.id DESC",
+            (application_id,),
+        ))
+
+    def calendar(self):
+        return self._decorate(self.db.all(f"{self.SELECT} ORDER BY e.starts_at_utc DESC, e.id DESC"))
+
+    def month(self, year: int, month: int, status: str | None = None):
+        """Every event falling in a local-calendar month, bucketed by local day.
+
+        The UTC window is widened by a day at each end so an event stored in a
+        neighbouring UTC day still lands in the right local cell.
+        """
+        start = datetime(year, month, 1, tzinfo=local_timezone())
+        end = datetime(year + (month == 12), (month % 12) + 1, 1, tzinfo=local_timezone())
+        window = (
+            (start - timedelta(days=1)).astimezone(UTC).isoformat(timespec="seconds"),
+            (end + timedelta(days=1)).astimezone(UTC).isoformat(timespec="seconds"),
+        )
+        sql = f"{self.SELECT} WHERE e.starts_at_utc >= ? AND e.starts_at_utc < ?"
+        args: list[Any] = list(window)
+        if status:
+            sql += " AND a.status=?"
+            args.append(status)
+        rows = self._decorate(self.db.all(sql + " ORDER BY e.starts_at_utc, e.id", args))
+        prefix = f"{year:04d}-{month:02d}"
+        buckets: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            if row["local_day"].startswith(prefix):
+                buckets.setdefault(row["local_day"], []).append(row)
+        return buckets
+
+    def upcoming(self, limit: int = 10, include_automatic: bool = False):
+        """The agenda rail: real scheduled events, today onward, soonest first.
+
+        Automatic lifecycle rows (Drafted, status transitions) are records of
+        what already happened. They stay on the grid as dots, but they are not
+        things coming up, and ten of them would bury every real interview.
+        """
+        floor = datetime.combine(today_local(), datetime.min.time(), local_timezone())
+        clause = "" if include_automatic else " AND e.dedupe_key = ''"
+        return self._decorate(self.db.all(
+            f"{self.SELECT} WHERE e.starts_at_utc >= ?{clause} ORDER BY e.starts_at_utc, e.id LIMIT ?",
+            (floor.astimezone(UTC).isoformat(timespec="seconds"), limit),
+        ))
+
+    def get(self, event_id: int):
+        rows = self._decorate(self.db.all(f"{self.SELECT} WHERE e.id=?", (event_id,)))
+        return required(rows[0] if rows else None, "event")
+
+    def add(
+        self,
+        application_id: int,
+        event_type: str,
+        occurred_at: str,
+        notes: str = "",
+        all_day: bool | None = None,
+        dedupe_key: str = "",
+    ):
+        moment, detected_all_day = parse_stored(occurred_at)
+        if moment is None:
+            raise ValueError(f"Unrecognised event time: {occurred_at!r}")
+        event_id = self.db.execute(
+            """INSERT INTO events(
+                   application_id,event_type,occurred_at,notes,
+                   starts_at_utc,all_day,timezone,dedupe_key,updated_at
+               ) VALUES(?,?,?,?,?,?,?,?,?)""",
+            (
+                application_id, event_type, occurred_at, notes,
+                moment.isoformat(timespec="seconds"),
+                int(detected_all_day if all_day is None else all_day),
+                str(local_timezone()),
+                dedupe_key,
+                datetime.now(UTC).isoformat(timespec="seconds"),
+            ),
+        )
+        return self.get(event_id)
+
+    def record_auto(
+        self,
+        application_id: int,
+        event_type: str,
+        occurred_at: str,
+        notes: str = "",
+        key: str = "",
+        all_day: bool = True,
+    ):
+        """Insert or refresh an automatic event. Safe to replay; never duplicates."""
+        if key:
+            existing = self.db.one("SELECT id FROM events WHERE dedupe_key=?", (key,))
+            if existing:
+                self.db.execute(
+                    "UPDATE events SET event_type=?,occurred_at=?,notes=?,updated_at=? WHERE id=?",
+                    (event_type, occurred_at, notes, datetime.now(UTC).isoformat(timespec="seconds"), existing["id"]),
+                )
+                return self.get(existing["id"])
+        return self.add(application_id, event_type, occurred_at, notes, all_day=all_day, dedupe_key=key)
+
+    def update(self, event_id: int, event_type: str, occurred_at: str, notes: str = ""):
+        moment, detected_all_day = parse_stored(occurred_at)
+        if moment is None:
+            raise ValueError(f"Unrecognised event time: {occurred_at!r}")
+        self.db.execute(
+            """UPDATE events SET event_type=?,occurred_at=?,notes=?,
+                   starts_at_utc=?,all_day=?,updated_at=? WHERE id=?""",
+            (
+                event_type, occurred_at, notes,
+                moment.isoformat(timespec="seconds"), int(detected_all_day),
+                datetime.now(UTC).isoformat(timespec="seconds"), event_id,
+            ),
+        )
+        return self.get(event_id)
 
 
 class ApplicationService:
@@ -449,7 +663,30 @@ class ApplicationService:
                 ),
             )
             application_id = int(cur.lastrowid or 0)
+        self._record_lifecycle_event(
+            application_id,
+            "Drafted",
+            f"Draft created for {formal_title} at {company_name}.",
+            key=f"{application_id}:drafted",
+        )
         return self.get(application_id)
+
+    def _record_lifecycle_event(self, application_id: int, event_type: str, notes: str, key: str, when: str = ""):
+        """Automatic calendar entry. Never raises: a calendar problem must not
+        lose an application write."""
+        if not self.services:
+            return None
+        try:
+            return self.services.events.record_auto(
+                application_id,
+                event_type,
+                when or today_local().isoformat(),
+                notes,
+                key=key,
+                all_day=not when,
+            )
+        except Exception:
+            return None
 
     def update(self, application_id: int, **fields):
         old = self.get(application_id)
@@ -487,9 +724,43 @@ class ApplicationService:
                 f"UPDATE applications SET company_id=?,{', '.join(f'{key}=?' for key in allowed)},applied_at=? WHERE id=?",
                 (company_id, *values, applied, application_id),
             )
+        if status != old["status"]:
+            self._record_lifecycle_event(
+                application_id,
+                f"Status: {old['status']} → {status}",
+                f"Moved from {old['status']} to {status}.",
+                key=f"{application_id}:status:{status}:{today_local().isoformat()}",
+            )
         if status == "Applied":
+            self._record_lifecycle_event(
+                application_id,
+                "Applied",
+                "Application submitted.",
+                key=f"{application_id}:applied",
+                when=applied or "",
+            )
             self.archive(application_id)
         return self.get(application_id)
+
+    def set_status(self, application_id: int, status: str):
+        """Change only the status.
+
+        The full `update` path rebuilds every column from the submitted form, so
+        a status-only POST through it silently clears `questions_reviewed` and
+        `cover_letter_required`. This touches nothing else.
+        """
+        if status not in self.STATUSES:
+            raise ValueError(f"Unsupported application status: {status}")
+        return self.update(application_id, status=status)
+
+    def record_question_extraction(self, application_id: int, status: str, note: str = ""):
+        """Remember that the posting was scraped, and how it went."""
+        self.get(application_id)
+        self.db.execute(
+            "UPDATE applications SET questions_extraction_status=?,questions_extraction_note=? WHERE id=?",
+            (status, note, application_id),
+        )
+        return self.progress(application_id)
 
     def set_questions_reviewed(self, application_id: int, reviewed: bool = True):
         self.get(application_id)
@@ -502,6 +773,7 @@ class ApplicationService:
     def progress(self, application_id: int):
         assert self.services
         app = self.get(application_id)
+        readiness = self.services.candidate.readiness()
         documents = self.services.documents.list(application_id)
         questions = self.services.questions.list(application_id)
         enabled_academic = self.services.documents.academic(only_enabled=True)
@@ -515,6 +787,18 @@ class ApplicationService:
         ]
 
         checks = [
+            {
+                "key": "candidate_profile",
+                "label": "Basic profile information complete",
+                "complete": readiness["profile_complete"],
+                "required": True,
+            },
+            {
+                "key": "master_resume",
+                "label": "Master resume on file",
+                "complete": readiness["master_resume_available"],
+                "required": True,
+            },
             {
                 "key": "job_description",
                 "label": "Job description captured",
@@ -569,6 +853,26 @@ class ApplicationService:
                     else "Please share the job-posting URL or paste the job description."
                 ),
             }
+        elif readiness["capability"] != "full":
+            application_url = f"{self.services.base_url}/applications/{application_id}"
+            next_action = {
+                "code": "complete_candidate_setup",
+                "requires_user_input": True,
+                "instruction": (
+                    "Tell the user exactly what is missing and give them the setup URL. "
+                    "Do not generate a resume, a cover letter, or any answer until this is resolved."
+                ),
+                "question": (
+                    f"I saved a draft for {app['formal_title']} at {app['company_name']}: {application_url}. "
+                    f"I cannot build the application yet because {readiness['gap_phrase']}. "
+                    f"Open {readiness['setup_url']} to upload your master resume and fill in your basic "
+                    f"information, then tell me you are done."
+                ),
+                "setup_url": readiness["setup_url"],
+                "frontend_url": application_url,
+                "must_share_url": True,
+                "blocked_by": readiness["blocked_by"],
+            }
         elif unconsidered_academic:
             next_action = {
                 "code": "consider_academic_documents",
@@ -578,12 +882,35 @@ class ApplicationService:
                 "resource_uris": [f"jobtron://documents/{doc['id']}" for doc in unconsidered_academic],
                 "question": "",
             }
+        elif not app["questions_reviewed"] and app["url"].strip() and not app["questions_extraction_status"]:
+            next_action = {
+                "code": "extract_questions",
+                "requires_user_input": False,
+                "instruction": "Fetch the posting and list any application questions found on it.",
+                "question": "",
+                "url": app["url"],
+            }
         elif not app["questions_reviewed"]:
+            attempted = app["questions_extraction_status"]
+            assets_url = f"{self.services.base_url}/applications/{application_id}#assets"
+            if attempted and attempted != "ok":
+                question = (
+                    f"I could not read the application questions from that page. "
+                    f"{app['questions_extraction_note']} "
+                    f"Paste them here, drop screenshots at {assets_url}, or tell me there are none."
+                )
+            else:
+                question = (
+                    "Please paste the application questions, or confirm that this application "
+                    "has no additional questions."
+                )
             next_action = {
                 "code": "inventory_questions",
                 "requires_user_input": True,
                 "instruction": "Capture every proprietary application question, or record that the application has none.",
-                "question": "Please paste the application questions, or confirm that this application has no additional questions.",
+                "question": question,
+                "assets_url": assets_url,
+                "extraction_status": attempted,
             }
         elif unanswered_required:
             question = unanswered_required[0]
@@ -630,6 +957,8 @@ class ApplicationService:
             "checks": checks,
             "blocking_items": blockers,
             "next_action": next_action,
+            "capability": readiness["capability"],
+            "candidate_readiness": readiness,
             "questions_found": len(questions),
             "questions_answered": answered,
             "required_questions_unanswered": [question["id"] for question in unanswered_required],
@@ -860,6 +1189,8 @@ class ApplicationService:
 
 
 class Services:
-    def __init__(self, db: Database, storage: FileStorage):
-        self.db=db; self.storage=storage; self.documents=DocumentService(db,storage); self.candidate=CandidateService(db); self.questions=QuestionService(db); self.assets=AssetService(db,storage); self.events=EventService(db); self.applications=ApplicationService(db)
-        self.candidate.documents=self.documents; self.applications.services=self
+    def __init__(self, db: Database, storage: FileStorage, base_url: str = ""):
+        self.db=db; self.storage=storage; self.base_url=base_url.rstrip("/")
+        self.documents=DocumentService(db,storage); self.candidate=CandidateService(db); self.questions=QuestionService(db); self.assets=AssetService(db,storage); self.events=EventService(db); self.applications=ApplicationService(db)
+        self.candidate.documents=self.documents; self.candidate.services=self
+        self.applications.services=self; self.events.services=self

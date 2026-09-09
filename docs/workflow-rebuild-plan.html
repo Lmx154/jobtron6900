@@ -1,0 +1,874 @@
+<title>Jobtron Workflow Rebuild</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --ground:#eef1ec; --surface:#fbfcfa; --surface-2:#e6ebe6;
+  --ink:#16211a; --muted:#5d6b62; --line:#d3dbd4; --line-soft:#e0e6e0;
+  --pine:#1f5540; --pine-soft:#dde9e2;
+  --amber:#8a5713; --amber-soft:#f6ecd8;
+  --rust:#8e3b2f; --rust-soft:#f6e2dd;
+  --code-bg:#e9eee9;
+  --shadow:0 1px 2px rgba(22,33,26,.05),0 8px 24px -14px rgba(22,33,26,.22);
+  --measure:68ch;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1411; --surface:#161f1a; --surface-2:#1d2721;
+    --ink:#e8efe9; --muted:#93a398; --line:#2b3830; --line-soft:#232e28;
+    --pine:#6fc09a; --pine-soft:#1a3329;
+    --amber:#e6b45f; --amber-soft:#33280f;
+    --rust:#e08a72; --rust-soft:#341c16;
+    --code-bg:#111a15;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1411; --surface:#161f1a; --surface-2:#1d2721;
+  --ink:#e8efe9; --muted:#93a398; --line:#2b3830; --line-soft:#232e28;
+  --pine:#6fc09a; --pine-soft:#1a3329;
+  --amber:#e6b45f; --amber-soft:#33280f;
+  --rust:#e08a72; --rust-soft:#341c16;
+  --code-bg:#111a15;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -14px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box;}
+body{
+  margin:0; background:var(--ground); color:var(--ink);
+  font-family:Newsreader,Georgia,"Times New Roman",serif;
+  font-size:17px; line-height:1.62; -webkit-font-smoothing:antialiased;
+}
+h1,h2,h3,h4,.ui{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;}
+code,kbd,pre,.mono{font-family:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;}
+
+.wrap{max-width:1180px;margin:0 auto;padding:0 28px 120px;}
+.col{max-width:var(--measure);}
+
+/* ---------- masthead ---------- */
+.masthead{padding:64px 0 40px;border-bottom:2px solid var(--ink);}
+.eyebrow{
+  font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--pine);margin:0 0 18px;
+}
+h1{
+  font-size:clamp(38px,6.4vw,68px);font-weight:800;letter-spacing:-.035em;
+  line-height:1.02;margin:0;text-wrap:balance;
+}
+.deck{margin:20px 0 0;max-width:60ch;font-size:20px;line-height:1.5;color:var(--muted);}
+.deck strong{color:var(--ink);font-weight:500;}
+.meta{
+  display:flex;flex-wrap:wrap;gap:8px 26px;margin-top:30px;
+  font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);
+}
+.meta b{color:var(--ink);font-weight:500;}
+
+/* ---------- verdict ---------- */
+.verdict{
+  margin:36px 0 0;padding:22px 24px;background:var(--surface);
+  border:1px solid var(--line);border-left:3px solid var(--pine);border-radius:3px;
+  max-width:var(--measure);
+}
+.verdict p{margin:0;}
+.verdict p+p{margin-top:12px;}
+
+/* ---------- layout ---------- */
+.body-grid{display:grid;grid-template-columns:1fr;gap:0;}
+@media (min-width:1080px){
+  .body-grid{grid-template-columns:200px 1fr;gap:56px;align-items:start;}
+  .rail{position:sticky;top:32px;padding-top:56px;}
+}
+.rail{display:none;}
+@media (min-width:1080px){.rail{display:block;}}
+.rail ol{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px;}
+.rail a{
+  display:flex;gap:10px;padding:5px 0;text-decoration:none;color:var(--muted);
+  font-family:Archivo,sans-serif;font-size:12.5px;line-height:1.35;
+  border-bottom:1px solid transparent;
+}
+.rail a:hover{color:var(--pine);}
+.rail a span{font-family:"JetBrains Mono",monospace;font-size:11px;opacity:.65;flex:none;}
+
+/* ---------- sections ---------- */
+section{padding-top:56px;scroll-margin-top:24px;}
+.sec-head{display:flex;gap:16px;align-items:baseline;border-top:1px solid var(--line);padding-top:20px;margin-bottom:8px;}
+.sec-num{
+  font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:700;
+  color:var(--pine);flex:none;padding-top:6px;letter-spacing:.05em;
+}
+h2{font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-.028em;margin:0;line-height:1.12;text-wrap:balance;}
+.sec-sub{color:var(--muted);margin:6px 0 0 44px;max-width:58ch;font-size:16.5px;}
+h3{
+  font-size:15px;font-weight:700;letter-spacing:.01em;margin:38px 0 10px;
+  text-transform:none;
+}
+h3 .tag{
+  font-family:"JetBrains Mono",monospace;font-size:11px;font-weight:500;color:var(--muted);
+  letter-spacing:.06em;margin-left:9px;text-transform:uppercase;
+}
+h4{font-size:13.5px;font-weight:700;margin:26px 0 8px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;}
+p{margin:0 0 14px;max-width:var(--measure);}
+ul,ol{max-width:var(--measure);margin:0 0 16px;padding-left:22px;}
+li{margin-bottom:7px;}
+li::marker{color:var(--muted);}
+a{color:var(--pine);text-underline-offset:2px;}
+strong{font-weight:500;color:var(--ink);}
+em{font-style:italic;}
+
+code{
+  font-size:.86em;background:var(--code-bg);padding:1px 5px;border-radius:3px;
+  border:1px solid var(--line-soft);white-space:nowrap;
+}
+pre{
+  background:var(--code-bg);border:1px solid var(--line);border-radius:4px;
+  padding:16px 18px;overflow-x:auto;font-size:12.5px;line-height:1.62;margin:0 0 18px;
+}
+pre code{background:none;border:0;padding:0;white-space:pre;font-size:inherit;}
+.cap{font-size:12px;color:var(--muted);margin:-10px 0 20px;font-family:Archivo,sans-serif;}
+
+/* ---------- findings ---------- */
+.findings{display:flex;flex-direction:column;gap:0;margin:26px 0 0;border-top:1px solid var(--line);}
+.finding{
+  display:grid;grid-template-columns:64px 1fr;gap:0 18px;
+  padding:20px 0;border-bottom:1px solid var(--line-soft);
+}
+.f-id{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:700;color:var(--muted);padding-top:3px;}
+.f-body>p{margin:0 0 8px;max-width:62ch;}
+.f-title{font-family:Archivo,sans-serif;font-weight:700;font-size:16px;letter-spacing:-.012em;margin:0 0 7px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;}
+.chip{
+  display:inline-block;font-family:"JetBrains Mono",monospace;font-size:10px;font-weight:700;
+  letter-spacing:.09em;text-transform:uppercase;padding:2.5px 7px;border-radius:2px;flex:none;
+}
+.chip.crit{background:var(--rust-soft);color:var(--rust);}
+.chip.high{background:var(--amber-soft);color:var(--amber);}
+.chip.med{background:var(--pine-soft);color:var(--pine);}
+.chip.done{background:var(--pine);color:var(--surface);}
+.status-board{display:grid;gap:10px;margin:26px 0 0;}
+@media(min-width:720px){.status-board{grid-template-columns:repeat(2,1fr);}}
+.sb{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;background:var(--surface);border:1px solid var(--line);border-radius:4px;border-left:3px solid var(--pine);}
+.sb.pending{border-left-color:var(--muted);opacity:.72;}
+.sb-body{min-width:0;}
+.sb-body strong{display:block;font-family:Archivo,sans-serif;font-size:14px;letter-spacing:-.01em;}
+.sb-body span{display:block;color:var(--muted);font-size:13.5px;line-height:1.45;margin-top:2px;}
+.evidence{
+  font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);
+  margin:8px 0 0;padding-left:11px;border-left:2px solid var(--line);max-width:none;
+}
+
+/* ---------- tables ---------- */
+.tscroll{overflow-x:auto;margin:0 0 20px;border:1px solid var(--line);border-radius:4px;background:var(--surface);}
+table{border-collapse:collapse;width:100%;font-size:13px;min-width:640px;}
+th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;}
+thead th{
+  font-family:Archivo,sans-serif;font-size:11px;font-weight:700;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--muted);background:var(--surface-2);
+  border-bottom:1px solid var(--line);position:sticky;top:0;
+}
+tbody tr:last-child td{border-bottom:0;}
+td.mono,th.mono{font-family:"JetBrains Mono",monospace;font-size:12px;}
+td .say{font-style:italic;color:var(--ink);}
+.num{font-variant-numeric:tabular-nums;}
+
+/* ---------- callouts ---------- */
+.note{
+  margin:22px 0;padding:16px 20px;border-radius:3px;max-width:var(--measure);
+  background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--muted);
+}
+.note.warn{border-left-color:var(--amber);background:var(--amber-soft);}
+.note.stop{border-left-color:var(--rust);background:var(--rust-soft);}
+.note p{margin:0;max-width:none;}
+.note p+p{margin-top:10px;}
+.note .lbl{
+  font-family:"JetBrains Mono",monospace;font-size:10.5px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;display:block;margin-bottom:7px;
+}
+.note.warn .lbl{color:var(--amber);}
+.note.stop .lbl{color:var(--rust);}
+.note .lbl{color:var(--muted);}
+
+/* ---------- swatches ---------- */
+.swatches{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 20px;}
+.sw{
+  display:flex;align-items:center;gap:8px;padding:6px 11px 6px 8px;
+  border:1px solid var(--line);border-radius:999px;background:var(--surface);
+  font-family:"JetBrains Mono",monospace;font-size:11.5px;
+}
+.dot{width:11px;height:11px;border-radius:50%;flex:none;}
+
+/* ---------- phase strip ---------- */
+.phases{display:grid;gap:12px;margin:24px 0 0;}
+@media(min-width:760px){.phases{grid-template-columns:repeat(5,1fr);}}
+.phase{
+  background:var(--surface);border:1px solid var(--line);border-radius:4px;padding:15px 16px;
+  border-top:3px solid var(--pine);
+}
+.phase .p-n{font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--muted);letter-spacing:.08em;}
+.phase h4{margin:6px 0 6px;font-size:14px;color:var(--ink);text-transform:none;letter-spacing:-.01em;}
+.phase p{font-size:13.5px;margin:0;color:var(--muted);line-height:1.45;}
+.phase .p-cost{
+  margin-top:11px;font-family:"JetBrains Mono",monospace;font-size:11px;color:var(--pine);
+  padding-top:9px;border-top:1px solid var(--line-soft);
+}
+
+/* ---------- misc ---------- */
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 18px;max-width:var(--measure);margin:0 0 18px;font-size:14.5px;}
+.kv dt{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--pine);padding-top:3px;}
+.kv dd{margin:0;}
+hr{border:0;border-top:1px solid var(--line);margin:34px 0;max-width:var(--measure);}
+:focus-visible{outline:2px solid var(--pine);outline-offset:3px;border-radius:2px;}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+footer{margin-top:72px;padding-top:22px;border-top:2px solid var(--ink);font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Jobtron 6900 · engineering plan</p>
+  <h1>Jobtron Workflow Rebuild</h1>
+  <p class="deck">The agent created a Boeing draft and then asked for application questions — while your profile was blank and you had no resume on file. <strong>It did that because nothing in the codebase ever checks.</strong> Here is the sequenced fix.</p>
+  <div class="meta">
+    <span><b>repo</b> jobtron6900</span>
+    <span><b>branch</b> master</span>
+    <span><b>baseline</b> 18 tests passing</span>
+    <span><b>phases</b> 5</span>
+  </div>
+</header>
+
+<div class="body-grid">
+
+  <nav class="rail" aria-label="Contents">
+    <ol>
+      <li><a href="#status"><span>00</span>Build status</a></li>
+      <li><a href="#broken"><span>01</span>What's broken</a></li>
+      <li><a href="#idea"><span>02</span>The two ideas</a></li>
+      <li><a href="#p1"><span>03</span>Phase 1 · Readiness gate</a></li>
+      <li><a href="#p2"><span>04</span>Phase 2 · Workflow engine</a></li>
+      <li><a href="#p3"><span>05</span>Phase 3 · Question capture</a></li>
+      <li><a href="#p4"><span>06</span>Phase 4 · Calendar</a></li>
+      <li><a href="#p5"><span>07</span>Phase 5 · Small-model contract</a></li>
+      <li><a href="#tests"><span>08</span>Tests &amp; acceptance</a></li>
+      <li><a href="#risks"><span>09</span>Risks &amp; exclusions</a></li>
+      <li><a href="#seq"><span>10</span>Sequence</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+  <div class="verdict">
+    <p><strong>Diagnosis.</strong> This is not a prompting problem. <code>applications.progress()</code> — the single function the agent is instructed to obey after every write — computes six readiness checks, and <em>none of them look at your profile or your master resume.</em> The agent behaved correctly given what the server told it.</p>
+    <p><strong>Fix.</strong> Move the workflow out of English prose and into a state machine the server owns. The agent stops deciding; it calls one tool, says one sentence, and calls it again.</p>
+  </div>
+
+  <section id="status" style="padding-top:40px">
+    <div class="sec-head"><span class="sec-num">00</span><h2>Build status</h2></div>
+    <p class="sec-sub">Phases 1&ndash;5 are implemented on branch <code>workflow-rebuild</code>. 74 tests pass, up from 18. Nothing is committed.</p>
+
+    <div class="status-board">
+      <div class="sb"><span class="chip done">done</span><div class="sb-body"><strong>Phase 1 &middot; Readiness gate</strong><span>F1 and F6 closed. The Boeing scenario now names the missing resume and profile fields and hands over the <code>/profile</code> link.</span></div></div>
+      <div class="sb"><span class="chip done">done</span><div class="sb-body"><strong>Phase 2 &middot; Workflow engine</strong><span>F8 closed. <code>workflow.next</code> and <code>workflow.start_from_url</code> are live; the instruction blob is a four-step loop.</span></div></div>
+      <div class="sb"><span class="chip done">done</span><div class="sb-body"><strong>Phase 3 &middot; Posting capture</strong><span>F7 closed. Fetch, deterministic detection, honest failure to paste-or-screenshot. Migration&nbsp;3 records the attempt.</span></div></div>
+      <div class="sb"><span class="chip done">done</span><div class="sb-body"><strong>Phase 4 &middot; Calendar</strong><span>F2&ndash;F5 closed. Migration runner, UTC event model, auto-events, month grid with status dots and inline status change.</span></div></div>
+      <div class="sb"><span class="chip done">done</span><div class="sb-body"><strong>Phase 5 &middot; Model contract</strong><span>Applied across the tool surface. The <code>Applied</code> guard now lives in code, not prose.</span></div></div>
+      <div class="sb pending"><span class="chip">next</span><div class="sb-body"><strong>Not done</strong><span>Nothing is committed. The 43-tool MCP surface has not been trimmed. No run against a real posting yet.</span></div></div>
+    </div>
+
+    <h3>Found during the build, not in the original plan</h3>
+    <ul>
+      <li><strong>The test suite wrote to the live database.</strong> <code>app/main.py</code> built the ASGI app at import time, so importing it opened &mdash; and once migrations existed, <em>migrated</em> &mdash; the real data store. The app is now built lazily. Harmless this time; serious with a destructive migration.</li>
+      <li><strong>Two workflow steps said the wrong thing.</strong> Non-waiting steps inherited <code>progress()</code>'s question text, so the agent asked "Would you like me to prepare the tailored resume?" and then did not wait, and read the application question back at the user. Working steps now narrate; stopping steps ask. A test asserts a step cannot do both.</li>
+      <li><strong>The agenda rail was buried in lifecycle noise.</strong> Ten <code>Drafted</code> and <code>Status:</code> rows crowded out every real interview. Automatic events now stay on the grid as dots and are excluded from "Upcoming".</li>
+      <li><strong>A cascade collision painted a dash above every dot.</strong> <code>app.css</code> styles bare <code>details</code> with a top border and padding; the dots are <code>details</code> too. Reset in <code>calendar.css</code>.</li>
+      <li><strong>An SSRF guard was added to the fetcher</strong> &mdash; the URL reaches a server on the user's machine by way of a model, so non-http(s) schemes and private address space are refused. Not in the plan; judged necessary.</li>
+    </ul>
+  </section>
+
+  <!-- ============ 01 ============ -->
+  <section id="broken">
+    <div class="sec-head"><span class="sec-num">01</span><h2>What's actually broken</h2></div>
+    <p class="sec-sub">Eight findings, each reproduced against the code or the live database. No speculation.</p>
+
+    <h4 style="margin-top:32px">Reproduction</h4>
+    <p>Fresh database, empty profile, no master resume, one Boeing application with a full job description — exactly your state:</p>
+<pre><code>percent_complete : 25
+ready_to_apply   : False
+blocking_items   : ['Application questions inventoried',
+                    'Required questions answered',
+                    'Tailored resume approved']
+next_action.code : inventory_questions
+next_action.q    : "Please paste the application questions, or confirm
+                    that this application has no additional questions."
+check keys       : ['job_description', 'academic_documents',
+                    'questions_reviewed', 'required_answers',
+                    'application_resume', 'cover_letter']
+mentions "master_resume"? : False
+mentions "profile"?       : False
+events recorded           : []</code></pre>
+    <p class="cap">The string <code>master resume</code> never appears in the response the agent receives. Neither does <code>profile</code>. And zero calendar events exist.</p>
+
+    <div class="findings">
+
+      <div class="finding">
+        <div class="f-id">F1</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip crit">critical</span> Readiness checks ignore the candidate entirely</p>
+          <p>The <code>checks</code> list in <code>progress()</code> covers the job description, academic documents, question inventory, required answers, tailored resume, and cover letter. There is no check for profile completeness and no check for a master resume. The agent is structurally incapable of telling you what you're missing.</p>
+          <p class="evidence">app/services/core.py:517–552 · <code>[c["key"] for c in checks]</code> confirmed by execution</p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F2</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip crit">critical</span> Nothing ever writes an event</p>
+          <p><code>ApplicationService.create()</code> inserts into <code>companies</code> and <code>applications</code> and returns. It never touches <code>events</code>. Your live database has 1 application and 0 events. "Add to the calendar when it was drafted" has never once happened.</p>
+          <p class="evidence">app/services/core.py:418–452 · live DB <code>~/.local/share/jobtron6900/app.db</code>: applications=1, events=0</p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F3</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip high">high</span> The calendar is a reverse-chronological list, and it's in second place</p>
+          <p><code>EventService.calendar()</code> is one flat <code>ORDER BY occurred_at DESC</code>. The dashboard renders <code>events[:20]</code> as anchor rows in the <em>right</em> column of a two-column grid, below the status counters. No month grid, no dots, no colour, no expansion, no status editing, no way to move an application forward from it.</p>
+          <p class="evidence">app/services/core.py:376 · app/templates/dashboard.html · app/routes/dashboard.py:12</p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F4</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip high">high</span> Three incompatible datetime formats in one database</p>
+          <p><code>events.occurred_at</code> receives <code>2026-08-29T10:00</code> from the <code>datetime-local</code> input — naive, no zone. <code>applications.applied_at</code> receives <code>2026-08-31T02:09-07:00</code> — offset-aware. <code>created_at</code> receives <code>2026-08-31 02:09:48</code> from SQLite <code>CURRENT_TIMESTAMP</code> — space-separated UTC. Nothing can sort, bucket by day, or lay out a month grid across those three.</p>
+          <p class="evidence">app/db.py SCHEMA · core.py:481 <code>datetime.now().astimezone().isoformat()</code> · detail.html <code>type="datetime-local"</code></p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F5</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip high">high</span> There is no schema migration path at all</p>
+          <p><code>Database.initialize()</code> executes one <code>CREATE TABLE IF NOT EXISTS</code> script. No <code>PRAGMA user_version</code>, no <code>ALTER TABLE</code>, nowhere in the codebase. Adding a single column to your live database is currently impossible without dropping it. Every calendar improvement is blocked behind this.</p>
+          <p class="evidence">app/db.py:96–98 · <code>grep -rn "ALTER TABLE|user_version" app/</code> → no matches</p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F6</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip crit">critical</span> No link to send, and no way to accept an upload</p>
+          <p>Every <code>ui.*</code> tool returns a <code>frontend_url</code> pointing at <code>/applications…</code>. Nothing returns <code>/profile</code>. And the <code>documents.save</code> MCP tool accepts <code>text_content: str</code> only — there is no file-upload tool. Even if the agent had known your resume was missing, it had no link to hand you and no channel to receive the file.</p>
+          <p class="evidence">app/mcp/server.py:107–160 (all <code>frontend_url</code> values) · server.py:214 <code>documents_save</code> signature</p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F7</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip med">medium</span> Jobtron cannot read a job posting URL</p>
+          <p>Grepping <code>app/</code> for <code>httpx</code>, <code>requests</code>, or <code>urlopen</code> finds exactly one hit: the loopback health check. <code>httpx</code> is declared as a <em>test-only</em> dependency. "Check the link for application questions" is not implementable in the current server — it silently depends on whichever client happens to have web tools.</p>
+          <p class="evidence">pyproject.toml <code>[project.optional-dependencies] test</code> · server.py:284 is the only <code>urlopen</code></p>
+        </div>
+      </div>
+
+      <div class="finding">
+        <div class="f-id">F8</div>
+        <div class="f-body">
+          <p class="f-title"><span class="chip crit">critical</span> The workflow is a five-paragraph prose blob</p>
+          <p>The <code>MCPServer(instructions=…)</code> string contains roughly twelve imperatives — "retrieve", "create or update", "call progress after every write", "follow next_action", "preserve unchanged fields", "search the bank first", "read every enabled document", "never claim completion" — with no ordering and no precedence. A frontier model half-follows it. A small model cannot follow it at all.</p>
+          <p class="evidence">app/mcp/server.py:57–64</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ============ 02 ============ -->
+  <section id="idea">
+    <div class="sec-head"><span class="sec-num">02</span><h2>The two ideas</h2></div>
+    <p class="sec-sub">Everything below is an application of one of these. If a change doesn't serve one of them, it isn't in this plan.</p>
+
+    <h3>Idea one — readiness is global, tiered, and separate from per-application progress <span class="tag">new concept</span></h3>
+    <p>Today there is exactly one notion of completeness and it is scoped to a single application. But "do you have a master resume" is not a property of the Boeing job — it's a property of <em>you</em>, and it determines what Jobtron is capable of doing on <em>every</em> job. That deserves its own function and its own vocabulary.</p>
+
+    <div class="tscroll">
+      <table>
+        <thead><tr><th class="mono">capability</th><th>Preconditions</th><th>Jobtron may</th><th>Jobtron must not</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">draft_only</td>
+            <td>Profile core incomplete <em>and</em> no approved master resume</td>
+            <td>Capture the posting, create the draft, record the <code>Drafted</code> event, collect questions</td>
+            <td>Generate a resume, a cover letter, or any answer</td>
+          </tr>
+          <tr>
+            <td class="mono">partial</td>
+            <td>Profile core complete <em>or</em> approved master resume — not both</td>
+            <td>Everything above, plus answer questions from the profile, facts, and question bank</td>
+            <td>Generate a tailored resume</td>
+          </tr>
+          <tr>
+            <td class="mono">full</td>
+            <td>Profile core complete <em>and</em> approved master resume</td>
+            <td>Everything</td>
+            <td>Mark <code>Applied</code> without explicit user confirmation</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p><strong>The predicate must be exact</strong>, because a small model will be reading it. Profile core is a closed set — four fields, all non-empty after stripping:</p>
+<pre><code>REQUIRED_PROFILE_FIELDS = ("name", "email", "phone", "location")
+# website, github, linkedin, summary remain optional
+
+master_resume_available = EXISTS(
+    SELECT 1 FROM documents
+    WHERE application_id IS NULL
+      AND document_type = 'master_resume'
+      AND approved = 1
+)</code></pre>
+
+    <h3>Idea two — one front door, so the agent never chooses <span class="tag">new tool</span></h3>
+    <p>The agent currently has 34 tools and a paragraph of prose telling it which to reach for. Replace the decision with a lookup. One tool, <code>workflow.next</code>, returns exactly one step. The step contains the sentence to say and the name of the single next tool to call.</p>
+
+<pre><code>{
+  "step_id":        "need_candidate_setup",   // closed enum
+  "say_to_user":    "I created a draft for Guidance Navigation &amp; Control
+                     Engineer at Boeing. I can't build the application yet:
+                     you have no master resume saved, and your profile is
+                     missing name, email, phone, location. Open
+                     http://127.0.0.1:8765/profile — upload your master
+                     resume and fill in those fields, then tell me you're
+                     done.",
+  "you_must":       "Say say_to_user to the user word for word. Then stop.",
+  "then_call":      null,                     // exactly one tool name, or null
+  "waits_for_user": true,
+  "frontend_url":   "http://127.0.0.1:8765/profile",
+  "must_share_url": true,
+  "blocked_by":     ["master_resume", "profile.name", "profile.email",
+                     "profile.phone", "profile.location"]
+}</code></pre>
+
+    <p>And the entire MCP instruction block — all five paragraphs — collapses to this:</p>
+<pre><code>Jobtron has one rule.
+
+1. Call workflow.next.
+2. Say the "say_to_user" text to the user, word for word.
+3. If "then_call" names a tool, call that tool, then go to step 1.
+4. If "then_call" is null, stop and wait for the user.
+
+Never call any other Jobtron tool unless "then_call" names it.</code></pre>
+    <p class="cap">Four numbered steps and one prohibition. This is executable by a 7B model.</p>
+  </section>
+
+  <!-- ============ 03 ============ -->
+  <section id="p1">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Phase 1 · The readiness gate</h2></div>
+    <p class="sec-sub">Fixes F1 and F6 — the bug you actually hit. Land this first; it is useful on its own even if nothing else ships.</p>
+
+    <h3>1.1 New: <code>CandidateService.readiness()</code></h3>
+    <p>Pure function of candidate state, no application involved. Returns the capability enum, both booleans, the exact list of missing fields, the setup URL, and a pre-written sentence.</p>
+
+    <dl class="kv">
+      <dt>capability</dt><dd><code>"draft_only" | "partial" | "full"</code></dd>
+      <dt>profile_complete</dt><dd>boolean over the four required fields</dd>
+      <dt>missing_profile_fields</dt><dd>list of field names, empty when complete</dd>
+      <dt>master_resume_available</dt><dd>boolean; an approved candidate-scoped <code>master_resume</code> exists</dd>
+      <dt>setup_url</dt><dd><code>{frontend_base_url}/profile</code></dd>
+      <dt>say_to_user</dt><dd>the composed sentence, containing the URL and the field names</dd>
+    </dl>
+
+    <h3>1.2 Two new checks at the front of <code>progress()</code></h3>
+    <p>Insert <code>candidate_profile</code> and <code>master_resume</code> as the first two entries in the <code>checks</code> list, both <code>required: True</code>. This is what makes the missing pieces visible in <code>blocking_items</code>, in <code>percent_complete</code>, in the web detail page, and in the MCP App — all of which already render <code>checks</code> generically and need no changes.</p>
+
+    <h3>1.3 New <code>next_action</code> code, placed second in the chain</h3>
+    <p>Ordering matters and is deliberate. Capturing the posting is free and requires nothing from you, so it stays first — you get your draft. The setup gate fires immediately after, which produces exactly the exchange you described.</p>
+    <ol>
+      <li><code>capture_job_description</code> — unchanged, still first</li>
+      <li><code>complete_candidate_setup</code> — <strong>new</strong>, fires whenever <code>capability != "full"</code></li>
+      <li><code>consider_academic_documents</code> … through <code>post_submission_follow_up</code> — unchanged</li>
+    </ol>
+
+    <h3>1.4 New MCP tools</h3>
+    <dl class="kv">
+      <dt>candidate.readiness</dt><dd>Returns the block above. No arguments, no mutation.</dd>
+      <dt>ui.show_setup</dt><dd>Renders the setup surface and returns <code>frontend_url = /profile</code>. This is the link the agent sends you.</dd>
+    </dl>
+
+    <div class="note warn">
+      <span class="lbl">Expected test breakage</span>
+      <p><code>test_progress_returns_completeness_blockers_and_next_question</code> currently asserts <code>ready_to_apply is True</code> and <code>percent_complete == 100</code> for an application with no profile and no master resume. That assertion encodes the bug. Update the test to seed a profile and an approved master resume — do not weaken the new checks to keep it green.</p>
+      <p>Your existing Boeing draft will drop from 25% to roughly 17%. That number is now honest.</p>
+    </div>
+  </section>
+
+  <!-- ============ 04 ============ -->
+  <section id="p2">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Phase 2 · The workflow engine</h2></div>
+    <p class="sec-sub">Fixes F8. New module <code>app/services/workflow.py</code> — a pure function over database state, returning one step. No I/O, no model calls, fully table-testable.</p>
+
+    <h3>2.1 Entry point: <code>workflow.start_from_url(url)</code></h3>
+    <p>This is the "I paste a link" tool, and it is a single atomic call. It finds an existing application by URL or creates one, attempts the server-side fetch, records the <code>Drafted</code> calendar event, evaluates readiness, and returns the first step. One tool call takes you from a bare URL to the right sentence.</p>
+
+    <h3>2.2 The step table <span class="tag">the deliverable</span></h3>
+    <p>Every row is a <code>step_id</code>. The engine evaluates preconditions top to bottom and returns the first match. Because the order is total and the conditions are disjoint predicates over state, the output is deterministic — the same database always yields the same step.</p>
+
+    <div class="tscroll">
+      <table>
+        <thead>
+          <tr><th class="mono">step_id</th><th>Precondition</th><th>say_to_user</th><th class="mono">then_call</th><th>Waits</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="mono">capture_posting</td>
+            <td>URL supplied, no application matches it</td>
+            <td class="say">"Saving this posting now."</td>
+            <td class="mono">applications.create_from_url</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">need_job_description</td>
+            <td>Application exists, <code>job_description</code> empty, fetch failed or returned nothing</td>
+            <td class="say">"I couldn't read the posting at {url}. Paste the job description text here, or drop a screenshot at {app_url}#assets."</td>
+            <td class="mono">—</td>
+            <td>yes</td>
+          </tr>
+          <tr style="background:var(--pine-soft)">
+            <td class="mono">need_candidate_setup</td>
+            <td><code>capability != "full"</code></td>
+            <td class="say">"I created a draft for {title} at {company}: {app_url}. I can't build the application yet — {gaps}. Open {setup_url}, upload your master resume, fill in {fields}, then tell me you're done."</td>
+            <td class="mono">—</td>
+            <td>yes</td>
+          </tr>
+          <tr>
+            <td class="mono">inventory_questions</td>
+            <td><code>capability == "full"</code>, <code>questions_reviewed = 0</code>, posting text available</td>
+            <td class="say">"Checking the posting for application questions."</td>
+            <td class="mono">questions.extract_from_posting</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">need_questions_manual</td>
+            <td>Extraction ran, found nothing, inventory not confirmed</td>
+            <td class="say">"I couldn't find application questions on that page. Paste them here, drop screenshots at {app_url}#assets, or tell me there are none."</td>
+            <td class="mono">—</td>
+            <td>yes</td>
+          </tr>
+          <tr>
+            <td class="mono">consider_academic</td>
+            <td>Enabled academic documents not yet marked considered</td>
+            <td class="say">"Reading your transcript before I write anything."</td>
+            <td class="mono">documents.mark_considered</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">generate_resume</td>
+            <td><code>capability == "full"</code>, no approved <code>application_resume</code></td>
+            <td class="say">"Writing your tailored resume from your master resume."</td>
+            <td class="mono">documents.save</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">generate_cover_letter</td>
+            <td><code>cover_letter_required</code>, no approved <code>cover_letter</code></td>
+            <td class="say">"Writing the cover letter this posting requires."</td>
+            <td class="mono">documents.save</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">answer_question</td>
+            <td>A required question has no current answer</td>
+            <td class="say">"Answering question {n} of {total}."</td>
+            <td class="mono">question_bank.search</td>
+            <td>no</td>
+          </tr>
+          <tr>
+            <td class="mono">confirm_submission</td>
+            <td><code>ready_to_apply</code>, not yet applied</td>
+            <td class="say">"Everything's ready — review it at {app_url}. Have you submitted it?"</td>
+            <td class="mono">—</td>
+            <td>yes</td>
+          </tr>
+          <tr>
+            <td class="mono">done</td>
+            <td>Applied and archived</td>
+            <td class="say">"Submitted and archived: {app_url}."</td>
+            <td class="mono">—</td>
+            <td>yes</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p>The <code>you_must</code> field carries the model-facing half. For <code>generate_resume</code> it reads, in full:</p>
+<pre><code>"Read jobtron://documents/{master_id}. Write a tailored resume using ONLY
+ facts that appear in that document and in the job description. Invent
+ nothing. Then call documents.save with document_type='application_resume',
+ application_id={id}, approved=false."</code></pre>
+
+    <div class="note">
+      <span class="lbl">Why this satisfies "always send the link"</span>
+      <p>The URL is interpolated into <code>say_to_user</code> itself, and the step carries <code>must_share_url: true</code>. Sharing the link stops being an instruction the model has to remember and becomes a string it is already saying. It cannot comply with step 2 without emitting the URL.</p>
+    </div>
+  </section>
+
+  <!-- ============ 05 ============ -->
+  <section id="p3">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Phase 3 · Reading the posting</h2></div>
+    <p class="sec-sub">Fixes F7. Jobtron fetches, not the client — so the workflow behaves identically in Codex, OpenCode, and Claude Code regardless of which has web tools.</p>
+
+    <h3>3.1 Promote <code>httpx</code> to a runtime dependency</h3>
+    <p>It's already pinned as a test extra. Move it into <code>[project].dependencies</code>. New service <code>app/services/posting.py</code>:</p>
+<pre><code>fetch_posting(url) -> {
+  "status": "ok" | "blocked" | "empty" | "error",
+  "text": str,                    # HTML reduced to text, scripts/styles stripped
+  "detected_questions": [...],    # candidates, never auto-committed
+  "reason": str,                  # human-readable, goes straight into say_to_user
+}</code></pre>
+    <p>Timeout 10s, one retry, a real browser <code>User-Agent</code>, redirects followed, response capped at 2 MB. Every failure mode returns a status — never an exception that reaches the agent.</p>
+
+    <h3>3.2 Question detection is deterministic, not inferred</h3>
+    <p>Regex and DOM heuristics only. The model confirms; it does not detect.</p>
+    <ul>
+      <li>Text lines ending in <code>?</code> within the application region</li>
+      <li><code>&lt;label&gt;</code>, <code>&lt;legend&gt;</code>, and <code>aria-label</code> text adjacent to form controls</li>
+      <li>Known ATS anchors: Workday <code>data-automation-id</code>, Greenhouse <code>#application</code>, Lever <code>.application-form</code>, Phenom <code>[data-ph-at-id]</code></li>
+    </ul>
+    <p>Detected candidates are returned for confirmation. Nothing is written to <code>questions</code> until the agent calls <code>questions.add</code>.</p>
+
+    <div class="note stop">
+      <span class="lbl">Expect this to fail on Boeing — by design</span>
+      <p>Boeing's board runs on Phenom People, which renders its application form in JavaScript. <code>httpx</code> fetches HTML; it does not execute scripts. This posting will return <code>blocked</code> or <code>empty</code>.</p>
+      <p>That is the <em>correct</em> outcome, and it is exactly the case you asked for: the engine falls through to <code>need_questions_manual</code>, which says so plainly and offers you paste-or-screenshot. The screenshot path already works — <code>app/static/app.js</code> has a clipboard-paste handler and a drop zone on <code>/applications/{id}#assets</code>. The link in that sentence points straight at it.</p>
+    </div>
+  </section>
+
+  <!-- ============ 06 ============ -->
+  <section id="p4">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Phase 4 · The calendar</h2></div>
+    <p class="sec-sub">Fixes F2, F3, F4, F5. The largest phase, and the one with a hard prerequisite: nothing here is possible until the database can be migrated.</p>
+
+    <h3>4.1 A migration runner — do this first <span class="tag">blocking</span></h3>
+    <p>Add <code>MIGRATIONS: list[tuple[int, str]]</code> to <code>app/db.py</code>, driven by <code>PRAGMA user_version</code>. <code>initialize()</code> runs the base schema, reads the version, and applies pending migrations inside a single transaction. Existing databases are stamped at version 1 on first contact, since they already match the base schema.</p>
+
+    <h3>4.2 Migration 2 — a real event model</h3>
+<pre><code>ALTER TABLE events ADD COLUMN starts_at_utc TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN ends_at_utc   TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN all_day       INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE events ADD COLUMN timezone      TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN dedupe_key    TEXT NOT NULL DEFAULT '';
+ALTER TABLE events ADD COLUMN updated_at    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
+CREATE INDEX events_starts ON events(application_id, starts_at_utc);
+CREATE UNIQUE INDEX events_dedupe ON events(dedupe_key) WHERE dedupe_key != '';</code></pre>
+    <p><code>occurred_at</code> is <strong>kept</strong>, not dropped — it becomes the display-local string. The backfill parses all three legacy shapes from F4 into UTC. <code>dedupe_key</code> is empty for hand-entered events &mdash; you can add "Interview" twice on purpose &mdash; and set only on automatic ones, which is what makes replays idempotent. Zero data loss; the migration is safe to run twice.</p>
+
+    <h3>4.3 Automatic events — the tracker half</h3>
+    <p>This is what turns a log into a tracker. Emit on write, with a deterministic <code>dedupe_key</code> of <code>{application_id}:{kind}:{date}</code> so a replay updates rather than duplicates:</p>
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>Trigger</th><th class="mono">event_type</th><th>Timing</th></tr></thead>
+        <tbody>
+          <tr><td><code>applications.create()</code></td><td class="mono">Drafted</td><td>all-day, today <em>— your explicit ask</em></td></tr>
+          <tr><td>Status change in <code>update()</code></td><td class="mono">Status: {old} → {new}</td><td>all-day, today</td></tr>
+          <tr><td>Status becomes <code>Applied</code></td><td class="mono">Applied</td><td>at <code>applied_at</code></td></tr>
+          <tr><td>Manual, via UI or MCP</td><td class="mono">Interview, Assessment, …</td><td>as entered</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>4.4 Colour coding — one source of truth</h3>
+    <p>Colour encodes <strong>application status</strong>, because status is the dimension you're tracking. Defined once in <code>app/services/palette.py</code> and consumed by both the dashboard calendar and the MCP App, so a dot means the same thing everywhere. Every member of <code>ApplicationService.STATUSES</code> gets an entry — a test enforces total coverage.</p>
+    <div class="swatches">
+      <span class="sw"><span class="dot" style="background:#8a8f87"></span>Draft</span>
+      <span class="sw"><span class="dot" style="background:#1f5540"></span>Ready to Apply</span>
+      <span class="sw"><span class="dot" style="background:#2f6fb0"></span>Applied</span>
+      <span class="sw"><span class="dot" style="background:#8a5713"></span>Assessment</span>
+      <span class="sw"><span class="dot" style="background:#6a3fa0"></span>Interviewing</span>
+      <span class="sw"><span class="dot" style="background:#1c7a4f"></span>Offer</span>
+      <span class="sw"><span class="dot" style="background:#8e3b2f"></span>Rejected</span>
+      <span class="sw"><span class="dot" style="background:#5d6b62"></span>Withdrawn</span>
+      <span class="sw"><span class="dot" style="background:#3d4a42"></span>Closed</span>
+    </div>
+
+    <h3>4.5 Standalone by decision <span class="tag">non-goal</span></h3>
+    <p>No ICS feed, no CalDAV, no email scraping, no Google or Outlook integration, no accounts. The calendar reads one table in your own SQLite file and renders it. That is the whole dependency graph.</p>
+    <p>What you give up is seeing Jobtron events inside Apple Calendar. What you get is a calendar with no auth story, no token refresh, no sync conflicts, no network failure mode, and no third party holding your job search. For a local-first tool that already owns the data, that trade is the right way round.</p>
+
+    <h3>4.6 The calendar UI &mdash; the centre of the dashboard</h3>
+    <p>Server-rendered month grid at <code>GET /?month=2026-08</code>, placed as the <strong>first element</strong> of the dashboard, above the status counters. No client-side framework and no calendar library &mdash; a month grid is a seven-column CSS grid and about forty lines of date arithmetic. The existing stack renders it fine.</p>
+
+    <h4>Layout</h4>
+    <ul>
+      <li><strong>The grid owns the top of the page.</strong> Full width, previous / next / Today, weekday header row, six week-rows so the height never jumps between months. Today's cell carries a ring.</li>
+      <li><strong>An agenda rail beside it</strong> on wide viewports: the next ten upcoming events in chronological order, each a link. That is what you read on a Monday; the grid is what you scan. Below <code>900px</code> the rail stacks under the grid.</li>
+      <li><strong>Status counters move below the calendar</strong> &mdash; they summarise the same data and no longer need to come first.</li>
+    </ul>
+
+    <h4>Dots</h4>
+    <ul>
+      <li>Each day cell shows up to four dots coloured by the owning application's status; overflow renders <code>+3</code>, which expands the cell rather than opening a dialog.</li>
+      <li>Each dot is a real <code>&lt;button&gt;</code> with an accessible name &mdash; "Interview &middot; Boeing &middot; Aug 14".</li>
+      <li><strong>Filter chips</strong> above the grid, one per status, toggling dot visibility through a <code>?status=</code> query param. Nine statuses on one month is noise; two is a view.</li>
+    </ul>
+
+    <h4>Expansion &mdash; the tracker half</h4>
+    <p>Clicking a dot opens a popover anchored to it: event type, local time, company &middot; title, notes, and two controls.</p>
+    <ul>
+      <li><strong>Status.</strong> A <code>&lt;select&gt;</code> of <code>STATUSES</code> that POSTs to a new <code>/applications/{id}/status</code> route and returns to the same month view. Changing it here recolours the dot, writes a transition event, and moves the application &mdash; without ever leaving the dashboard. This is the shortcut you asked for.</li>
+      <li><strong>Open application &rarr;</strong> straight to <code>/applications/{id}</code>.</li>
+    </ul>
+
+    <h4>Interaction</h4>
+    <ul>
+      <li><strong>Grid.</strong> Month view, previous / next / Today. Weekday header row. Today's cell carries a ring.</li>
+      <li><strong>Dots.</strong> Each day cell shows up to four dots coloured by the owning application's status; overflow renders <code>+3</code>. Each dot is a real <code>&lt;button&gt;</code> with an accessible name — "Interview · Boeing · Aug 14".</li>
+      <li><strong>Expansion.</strong> Clicking a dot opens a popover: event type, local time, company · title, notes, and two controls.</li>
+      <li><strong>Control one — status.</strong> A <code>&lt;select&gt;</code> of <code>STATUSES</code> that POSTs to a new <code>/applications/{id}/status</code> route and returns to the calendar. This is what makes the calendar an application tracker.</li>
+      <li><strong>Control two — open.</strong> "Open application →" straight to <code>/applications/{id}</code>.</li>
+      <li><strong>Keyboard.</strong> Roving tabindex across day cells, arrow keys to move, Enter to open, Escape to close. Focus returns to the originating dot.</li>
+      <li><strong>Motion.</strong> A short popover fade, suppressed under <code>prefers-reduced-motion</code>.</li>
+      <li><strong>No JavaScript requirement.</strong> Grid, filters, and month navigation are plain links and forms. Only popover positioning is scripted, and it degrades to an inline <code>&lt;details&gt;</code> block if that script never runs.</li>
+    </ul>
+
+    <div class="note stop">
+      <span class="lbl">Live bug — do not reuse the existing update route</span>
+      <p>The status control needs its own endpoint. <code>POST /applications/{id}</code> sets <code>questions_reviewed</code> and <code>cover_letter_required</code> from <code>"x" in raw</code> — checkbox presence. A partial form that omits those keys silently clears both flags. A status-only POST through that route would wipe your question-inventory state every time you moved a card.</p>
+      <p>Add <code>POST /applications/{id}/status</code> that touches <code>status</code> and nothing else.</p>
+    </div>
+  </section>
+
+  <!-- ============ 07 ============ -->
+  <section id="p5">
+    <div class="sec-head"><span class="sec-num">07</span><h2>Phase 5 · The small-model contract</h2></div>
+    <p class="sec-sub">Eight rules applied across every tool surface. Cheap to do, and it's what keeps the workflow followable on a 7B model. Do it alongside Phase 2.</p>
+
+    <ol>
+      <li><strong>One tool per decision.</strong> The agent's choice set at any moment is at most two. If a step could branch three ways, the server picks and returns one.</li>
+      <li><strong>Verbatim strings.</strong> <code>say_to_user</code> is quoted to the user unchanged. The model relays; it does not compose. Composition is where small models drop the requirement and the link.</li>
+      <li><strong>A description template, used everywhere.</strong> <code>&lt;one sentence&gt;. CALL WHEN: &lt;trigger&gt;. DO NOT CALL WHEN: &lt;anti-trigger&gt;. RETURNS: &lt;shape&gt;.</code> The anti-trigger matters more than the trigger — it's what stops a small model reaching for a tool out of turn.</li>
+      <li><strong>Closed enums over prose.</strong> <code>step_id</code>, <code>capability</code>, <code>status</code>. Closed sets are assertable; prose is not.</li>
+      <li><strong>The link is data, not memory.</strong> <code>frontend_url</code> and <code>must_share_url: true</code> on every return, and the URL is already inside <code>say_to_user</code>.</li>
+      <li><strong>No negative-only instructions.</strong> "Never mark Applied unless the user confirms" becomes a server-side refusal: <code>applications.update(status="Applied")</code> raises unless <code>user_confirmed=True</code> is passed. Guards live in code, not in prose.</li>
+      <li><strong>Errors are steps.</strong> A tool never returns a bare exception. It returns the next <code>step_id</code> and the sentence explaining what happened.</li>
+      <li><strong>Rewrite the instruction block</strong> to the four-step loop in §02.</li>
+    </ol>
+  </section>
+
+  <!-- ============ 08 ============ -->
+  <section id="tests">
+    <div class="sec-head"><span class="sec-num">08</span><h2>Tests &amp; acceptance</h2></div>
+    <p class="sec-sub">Baseline is 18 passing. Each phase lands with its own file; no phase is done until <code>uv run pytest</code> is green.</p>
+
+    <div class="tscroll">
+      <table>
+        <thead><tr><th>File</th><th>Asserts</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="mono">test_readiness_gate.py</td>
+            <td>Empty profile + no resume + a job description yields <code>next_action.code == "complete_candidate_setup"</code>; <code>say_to_user</code> contains both the literal <code>master resume</code> and the <code>/profile</code> URL; <code>capability</code> transitions <code>draft_only → partial → full</code> as each piece is added.</td>
+          </tr>
+          <tr>
+            <td class="mono">test_workflow_engine.py</td>
+            <td>Table-driven over every <code>step_id</code>: the stated precondition produces exactly that step, <code>then_call</code> is null or a registered tool name, and <code>say_to_user</code> is non-empty. Plus a total-coverage assertion — every enum member has a row.</td>
+          </tr>
+          <tr>
+            <td class="mono">test_migration.py</td>
+            <td>Runs against a fixture shaped like your live database (1 application, 0 events, empty candidate). Migration applied twice is a no-op. Row counts preserved. All three legacy datetime shapes backfill to valid UTC.</td>
+          </tr>
+          <tr>
+            <td class="mono">test_calendar.py</td>
+            <td><code>applications.create()</code> emits exactly one <code>Drafted</code> event. A status change emits exactly one transition event. Re-running does not duplicate. Events bucket into the correct day cell across all three legacy datetime shapes, and across a month boundary in a non-UTC local zone. <code>STATUS_COLORS</code> covers every member of <code>STATUSES</code>. <code>POST /applications/{id}/status</code> leaves <code>questions_reviewed</code> and <code>cover_letter_required</code> untouched.</td>
+          </tr>
+          <tr>
+            <td class="mono">test_workflow.py</td>
+            <td><em>Amend</em> <code>test_progress_returns_completeness_blockers_and_next_question</code> to seed a profile and an approved master resume. The current assertions encode F1.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>Acceptance — the end-to-end rehearsal</h4>
+    <p>Wipe to a fresh data directory, then, in one session:</p>
+    <ol>
+      <li>Paste the Boeing URL. → A draft exists, a <code>Drafted</code> dot appears on today's cell, and the agent says it needs a master resume and four profile fields, <em>with the <code>/profile</code> link in the sentence.</em></li>
+      <li>Upload a resume and fill the profile in the browser. Say "done."</li>
+      <li>The agent reports it couldn't read the questions off Phenom, and offers paste-or-screenshot <em>with the assets link.</em></li>
+      <li>Paste two questions. → Tailored resume drafted, both questions answered from the bank and the resume, all unapproved.</li>
+      <li>The agent hands you the application link and asks whether you've submitted.</li>
+      <li>Click the calendar dot. Change status to Applied. → The dot recolours, an <code>Applied</code> event lands, the archive snapshot is written.</li>
+    </ol>
+    <p>If any step requires you to tell the agent what to do next, the engine has a gap. Add the row.</p>
+  </section>
+
+  <!-- ============ 09 ============ -->
+  <section id="risks">
+    <div class="sec-head"><span class="sec-num">09</span><h2>Risks &amp; what this plan excludes</h2></div>
+    <p class="sec-sub">Stated up front so none of it arrives as a surprise later.</p>
+
+    <h4>Deliberately not doing</h4>
+    <ul>
+      <li><strong>Any external calendar integration.</strong> No ICS feed, no CalDAV, no email scraping, no Google or Outlook. The calendar is standalone and lives entirely in your SQLite file &mdash; see §4.5 for the reasoning. This is a decision, not a deferral.</li>
+      <li><strong>Headless-browser scraping.</strong> Playwright would render Workday and Phenom, but it's a heavy dependency and a permanent maintenance surface against sites that actively resist. Phase 3 degrades to paste-or-screenshot on purpose. Reconsider only if the manual fallback proves intolerable in practice.</li>
+      <li><strong>Auto-submitting applications.</strong> Out of scope, permanently. Jobtron prepares; you submit.</li>
+    </ul>
+
+    <h4>Known consequences</h4>
+    <ul>
+      <li><code>percent_complete</code> changes meaning — six required checks become eight. Existing numbers drop. This is a correction, not a regression.</li>
+      <li>Two existing tests must be amended because they assert the buggy behaviour.</li>
+      <li><code>httpx</code> becomes a runtime dependency, so <code>uv sync</code> is required after the Phase 3 upgrade.</li>
+    </ul>
+
+    <h4>One deliberate departure from the blueprint</h4>
+    <p>The architecture blueprint says, of application status: <em>"User controls status. Do not create a formal workflow engine"</em> and <em>"No internal state machine is required."</em> This plan keeps both promises — status stays entirely user-owned, and nothing auto-advances an application through its lifecycle. The state machine introduced here drives the <strong>agent's procedure</strong>, not the application's status. Those are different objects, and conflating them is what produced the prose blob in F8.</p>
+  </section>
+
+  <!-- ============ 10 ============ -->
+  <section id="seq">
+    <div class="sec-head"><span class="sec-num">10</span><h2>Sequence</h2></div>
+    <p class="sec-sub">Phase 1 alone fixes the bug you reported. Everything after it compounds.</p>
+
+    <div class="phases">
+      <div class="phase">
+        <p class="p-n">PHASE 1</p>
+        <h4>Readiness gate</h4>
+        <p>Two checks, one service method, two tools. The reported bug stops happening.</p>
+        <p class="p-cost">~1 session · no deps</p>
+      </div>
+      <div class="phase">
+        <p class="p-n">PHASE 2</p>
+        <h4>Workflow engine</h4>
+        <p>The step table, <code>workflow.next</code>, the four-line instruction block. Ship §07 with it.</p>
+        <p class="p-cost">~1–2 sessions · needs P1</p>
+      </div>
+      <div class="phase">
+        <p class="p-n">PHASE 3</p>
+        <h4>Posting capture</h4>
+        <p>Server-side fetch, deterministic question detection, honest failure.</p>
+        <p class="p-cost">~1 session · needs P2</p>
+      </div>
+      <div class="phase">
+        <p class="p-n">PHASE 4</p>
+        <h4>Calendar</h4>
+        <p>Migration runner, event model, auto-events, colours, month grid, dashboard rebuild.</p>
+        <p class="p-cost">~2–3 sessions · independent</p>
+      </div>
+      <div class="phase">
+        <p class="p-n">PHASE 5</p>
+        <h4>Model contract</h4>
+        <p>Eight rules across every tool description and return shape.</p>
+        <p class="p-cost">~½ session · with P2</p>
+      </div>
+    </div>
+
+    <p style="margin-top:26px"><strong>Dependency notes.</strong> Phase 1 must precede Phase 2 — the engine reads <code>capability</code>. Phase 4's migration runner has no dependencies at all and can land first if you'd rather unblock the schema before anything else. Phase 5 is not a separate pass; fold it into Phase 2 as you write each tool.</p>
+  </section>
+
+  <footer>
+    Jobtron 6900 · workflow rebuild · findings F1–F8 verified against app/services/core.py, app/db.py, app/mcp/server.py and the live data store
+  </footer>
+
+  </main>
+</div>
+</div>

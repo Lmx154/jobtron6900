@@ -78,25 +78,128 @@ CREATE TABLE IF NOT EXISTS application_archives (
 INSERT OR IGNORE INTO candidates(id) VALUES (1);
 """
 
+# Version of the schema defined by SCHEMA above. Databases created before the
+# migration runner existed match this exactly, so they are stamped here on
+# first contact rather than being re-created.
+BASE_SCHEMA_VERSION = 1
+
+
+def _migration_2_calendar(connection: sqlite3.Connection) -> None:
+    """Give events a real instant, an all-day flag, and idempotent auto-creation.
+
+    `occurred_at` is deliberately kept as the display-local string it always
+    was: nothing is dropped, and a failed backfill costs a blank cell rather
+    than a lost event.
+    """
+    from app.services.timeutil import parse_stored
+
+    for statement in (
+        "ALTER TABLE events ADD COLUMN starts_at_utc TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE events ADD COLUMN ends_at_utc   TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE events ADD COLUMN all_day       INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE events ADD COLUMN timezone      TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE events ADD COLUMN dedupe_key    TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE events ADD COLUMN updated_at    TEXT NOT NULL DEFAULT ''",
+    ):
+        connection.execute(statement)
+
+    rows = connection.execute("SELECT id, occurred_at FROM events").fetchall()
+    for row in rows:
+        moment, all_day = parse_stored(row["occurred_at"])
+        if moment is None:
+            continue
+        connection.execute(
+            "UPDATE events SET starts_at_utc=?, all_day=? WHERE id=?",
+            (moment.isoformat(timespec="seconds"), int(all_day), row["id"]),
+        )
+
+    connection.execute("CREATE INDEX IF NOT EXISTS events_starts ON events(application_id, starts_at_utc)")
+    # Partial index: hand-entered events keep an empty key and may repeat freely.
+    connection.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS events_dedupe ON events(dedupe_key) WHERE dedupe_key != ''"
+    )
+
+
+def _migration_3_question_extraction(connection: sqlite3.Connection) -> None:
+    """Remember whether the posting was already scraped for questions.
+
+    Without this the workflow cannot tell "not tried yet" from "tried and the
+    site refused", and would either loop or never offer the manual fallback.
+    """
+    connection.execute(
+        "ALTER TABLE applications ADD COLUMN questions_extraction_status TEXT NOT NULL DEFAULT ''"
+    )
+    connection.execute(
+        "ALTER TABLE applications ADD COLUMN questions_extraction_note TEXT NOT NULL DEFAULT ''"
+    )
+
+
+# (target_version, migration) applied in order to any database below target.
+MIGRATIONS: list[tuple[int, Any]] = [
+    (2, _migration_2_calendar),
+    (3, _migration_3_question_extraction),
+]
+
 
 class Database:
     def __init__(self, path: Path): self.path = path
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.connect() as connection: connection.executescript(SCHEMA)
+        with self.connect() as connection:
+            connection.executescript(SCHEMA)
+        self._migrate()
+
+    def _migrate(self) -> None:
+        """Apply pending migrations under an exclusive write lock.
+
+        Several Jobtron processes may start at once (one per MCP client), so the
+        version check and the migration must be atomic. BEGIN IMMEDIATE takes the
+        write lock before PRAGMA user_version is read, which makes a second
+        starter block here and then find nothing left to do -- rather than both
+        reading the old version and both running ALTER TABLE.
+
+        A database at version 0 either is brand new or predates the runner; in
+        both cases it now matches SCHEMA, so it is stamped at the base version
+        rather than migrated from nothing.
+        """
+        connection = sqlite3.connect(self.path, timeout=30, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        try:
+            connection.execute("PRAGMA busy_timeout = 30000")
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                version = int(connection.execute("PRAGMA user_version").fetchone()[0])
+                if version < BASE_SCHEMA_VERSION:
+                    version = BASE_SCHEMA_VERSION
+                    connection.execute(f"PRAGMA user_version = {BASE_SCHEMA_VERSION:d}")
+                for target, migrate in MIGRATIONS:
+                    if target > version:
+                        migrate(connection)
+                        connection.execute(f"PRAGMA user_version = {int(target):d}")
+                connection.execute("COMMIT")
+            except Exception:
+                connection.execute("ROLLBACK")
+                raise
+        finally:
+            connection.close()
 
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path, timeout=10)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
+        connection.execute("PRAGMA busy_timeout = 10000")
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = NORMAL")
         try:
             yield connection
             connection.commit()
         except Exception:
-            connection.rollback(); raise
-        finally: connection.close()
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def one(self, sql: str, parameters: Iterable[Any] = ()) -> dict[str, Any] | None:
         with self.connect() as connection: row = connection.execute(sql, tuple(parameters)).fetchone()

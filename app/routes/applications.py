@@ -43,6 +43,17 @@ async def prepare_autofill(application_id:int,request:Request):
     return JSONResponse(plan,status_code=200 if plan["valid"] else 422)
 
 
+@router.post("/{application_id}/status")
+async def set_status(application_id:int,request:Request):
+    form=await request.form(); status=str(form.get("status",""))
+    try: services(request).applications.set_status(application_id,status)
+    except ValueError as exc: raise HTTPException(422,str(exc)) from exc
+    except NotFoundError as exc: raise HTTPException(404,str(exc)) from exc
+    next_path=str(form.get("next","") or "")
+    safe_next=next_path if next_path.startswith("/") and not next_path.startswith("//") else "/"
+    return redirect(safe_next)
+
+
 @router.post("/{application_id}")
 async def update_application(application_id:int,request:Request):
     raw=await request.form(); form=dict(raw); form["questions_reviewed"]="questions_reviewed" in raw; form["cover_letter_required"]="cover_letter_required" in raw; services(request).applications.update(application_id,**form); return redirect(f"/applications/{application_id}")

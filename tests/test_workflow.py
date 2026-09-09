@@ -81,9 +81,46 @@ def test_versions_are_scoped_and_approval_is_singular(services):
         services.applications.update(app["id"],status="Invented Workflow")
 
 
-def test_progress_returns_completeness_blockers_and_next_question(services):
+def test_progress_gates_on_candidate_setup_before_anything_else(services):
+    """An application cannot advance while the candidate has no resume or profile."""
     app=services.applications.create("Progress Co","Systems Engineer",url="https://example.test/job",job_description="Build systems")
 
+    progress=services.applications.progress(app["id"])
+    assert progress["capability"]=="draft_only"
+    assert progress["next_action"]["code"]=="complete_candidate_setup"
+    assert progress["next_action"]["requires_user_input"] is True
+    assert progress["next_action"]["must_share_url"] is True
+    assert set(progress["next_action"]["blocked_by"])=={
+        "master_resume","profile.name","profile.email","profile.phone","profile.location",
+    }
+    question=progress["next_action"]["question"]
+    assert "master resume" in question
+    assert progress["next_action"]["setup_url"] in question
+    assert "Basic profile information complete" in progress["blocking_items"]
+    assert "Master resume on file" in progress["blocking_items"]
+
+    # A profile alone is not enough to generate a tailored resume.
+    services.candidate.update_profile(name="Ada",email="a@example.com",phone="555",location="CA")
+    assert services.applications.progress(app["id"])["capability"]=="partial"
+    assert services.applications.progress(app["id"])["next_action"]["code"]=="complete_candidate_setup"
+
+    services.documents.save("master_resume","Master",text_content="Resume",approved=True)
+    progress=services.applications.progress(app["id"])
+    assert progress["capability"]=="full"
+    # The posting has a URL and has not been scraped yet, so Jobtron tries that first.
+    assert progress["next_action"]["code"]=="extract_questions"
+    services.applications.record_question_extraction(app["id"],"empty","The page rendered in JavaScript.")
+    fallback=services.applications.progress(app["id"])["next_action"]
+    assert fallback["code"]=="inventory_questions"
+    assert "screenshots" in fallback["question"]
+    assert fallback["assets_url"].endswith("#assets")
+
+
+def test_progress_returns_completeness_blockers_and_next_question(ready_services):
+    services=ready_services
+    app=services.applications.create("Progress Co","Systems Engineer",url="https://example.test/job",job_description="Build systems")
+
+    services.applications.record_question_extraction(app["id"],"ok","")
     progress=services.applications.progress(app["id"])
     assert progress["percent_complete"]<100
     assert progress["next_action"]["code"]=="inventory_questions"
@@ -100,7 +137,8 @@ def test_progress_returns_completeness_blockers_and_next_question(services):
     assert progress["next_action"]["code"]=="confirm_submission"
 
 
-def test_academic_document_is_extracted_enabled_and_marked_considered(services):
+def test_academic_document_is_extracted_enabled_and_marked_considered(ready_services):
+    services=ready_services
     transcript=services.documents.save(
         "academic_transcript",
         "Transcript",

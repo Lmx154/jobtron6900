@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from html import escape
+
 
 APPLICATIONS_UI_URI = "ui://jobtron/applications.html"
 
 
-APPLICATIONS_UI = r"""
+_APPLICATIONS_UI_TEMPLATE = r"""
 <!doctype html>
 <html lang="en">
 <head>
@@ -88,7 +90,7 @@ APPLICATIONS_UI = r"""
 </head>
 <body>
   <main class="shell" id="app" aria-live="polite">
-    <div class="panel"><p class="empty">Jobtron is preparing the review surface…</p></div>
+    <div class="panel"><p class="empty">Jobtron is preparing the review surface…</p><div class="actions"><a class="button secondary" href="__JOBTRON_FRONTEND_URL__/applications" target="_blank" rel="noreferrer">Open the live Jobtron dashboard</a></div></div>
   </main>
   <script>
     const root = document.getElementById("app");
@@ -280,9 +282,50 @@ APPLICATIONS_UI = r"""
         </section>`;
     }
 
+    function renderSetup(data) {
+      const readiness = data.readiness ?? {};
+      const items = [
+        {
+          label: "Master resume uploaded and made active",
+          complete: Boolean(readiness.master_resume_available),
+          hint: "Profile → Master resume → Upload new version",
+        },
+        {
+          label: "Basic profile information filled in",
+          complete: Boolean(readiness.profile_complete),
+          hint: (readiness.missing_profile_fields ?? []).length
+            ? `Still needed: ${(readiness.missing_profile_fields ?? []).join(", ")}`
+            : "Name, email, phone, and location are saved",
+        },
+      ];
+      const checklist = items.map((item) => `
+        <div class="check ${item.complete ? "" : "pending"}">
+          <span class="check-mark">${item.complete ? "✓" : "·"}</span>
+          <span>${escapeHtml(item.label)}<br><small>${escapeHtml(item.hint)}</small></span>
+          <small>${item.complete ? "Done" : "Needed"}</small>
+        </div>`).join("");
+
+      root.innerHTML = `
+        ${header("Setup required", data.title ?? "Finish your Jobtron setup", data.summary ?? "")}
+        <section class="panel next">
+          <span class="eyebrow">Why this is blocking</span>
+          <p class="next-question">Jobtron will only create drafts until these are done. It never invents facts about you, so it needs your master resume and contact details before it can write a tailored resume, a cover letter, or an application answer.</p>
+        </section>
+        <section class="panel">
+          <h2>What Jobtron needs</h2>
+          <div class="checklist">${checklist}</div>
+          <div class="actions">
+            ${data.frontend_url ? `<a class="button" href="${escapeHtml(data.frontend_url)}" target="_blank" rel="noreferrer">Open setup and upload</a>` : ""}
+            <button class="button secondary" data-follow-up="I finished my Jobtron setup. Check candidate.readiness again and continue.">I'm done — check again</button>
+          </div>
+          <p class="notice">Upload happens in the browser; the agent cannot receive files directly. Once the page shows your resume as active, come back and tell the agent you are done.</p>
+        </section>`;
+    }
+
     function render(data) {
       if (!data) return;
-      if (data.view === "application") { latestApplicationData = data; renderApplication(data); }
+      if (data.view === "setup") { renderSetup(data); }
+      else if (data.view === "application") { latestApplicationData = data; renderApplication(data); }
       else renderList(data);
     }
 
@@ -352,3 +395,12 @@ APPLICATIONS_UI = r"""
 </body>
 </html>
 """.strip()
+
+
+def build_applications_ui(frontend_base_url: str) -> str:
+    return _APPLICATIONS_UI_TEMPLATE.replace(
+        "__JOBTRON_FRONTEND_URL__", escape(frontend_base_url.rstrip("/"), quote=True)
+    )
+
+
+APPLICATIONS_UI = build_applications_ui("http://127.0.0.1:8765")

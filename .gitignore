@@ -11,4 +11,13 @@ wheels/
 
 # Local workstation data (back up separately; never commit personal records)
 data/app.db
+data/app.db-*
 data/files/
+data/.jobtron.lock
+data/.jobtron-owner.json
+
+# Local agent-client config and caches (machine-specific paths)
+.chunkhound/
+.codex/
+opencode.json
+.opencode.json

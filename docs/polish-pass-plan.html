@@ -1,0 +1,595 @@
+<title>Jobtron Polish Pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+:root{
+  --ground:#eef1ec; --surface:#fbfcfa; --surface-2:#e6ebe6;
+  --ink:#16211a; --muted:#5d6b62; --line:#d3dbd4; --line-soft:#e0e6e0;
+  --pine:#1f5540; --pine-soft:#dde9e2;
+  --amber:#8a5713; --amber-soft:#f6ecd8;
+  --rust:#8e3b2f; --rust-soft:#f6e2dd;
+  --code-bg:#e9eee9;
+  --shadow:0 1px 2px rgba(22,33,26,.05),0 8px 24px -14px rgba(22,33,26,.22);
+  --measure:68ch;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0e1411; --surface:#161f1a; --surface-2:#1d2721;
+    --ink:#e8efe9; --muted:#93a398; --line:#2b3830; --line-soft:#232e28;
+    --pine:#6fc09a; --pine-soft:#1a3329;
+    --amber:#e6b45f; --amber-soft:#33280f;
+    --rust:#e08a72; --rust-soft:#341c16;
+    --code-bg:#111a15;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0e1411; --surface:#161f1a; --surface-2:#1d2721;
+  --ink:#e8efe9; --muted:#93a398; --line:#2b3830; --line-soft:#232e28;
+  --pine:#6fc09a; --pine-soft:#1a3329;
+  --amber:#e6b45f; --amber-soft:#33280f;
+  --rust:#e08a72; --rust-soft:#341c16;
+  --code-bg:#111a15;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 8px 24px -14px rgba(0,0,0,.7);
+}
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--ground);color:var(--ink);
+  font-family:Newsreader,Georgia,"Times New Roman",serif;
+  font-size:17px;line-height:1.55;
+  font-optical-sizing:auto;
+}
+h1,h2,h3,h4,.ui{font-family:Archivo,"Helvetica Neue",Arial,sans-serif;}
+code,pre,.mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;}
+code{font-size:.82em;background:var(--code-bg);padding:.1em .35em;border-radius:3px;white-space:nowrap}
+pre{background:var(--code-bg);border:1px solid var(--line-soft);border-radius:6px;padding:12px 14px;font-size:12.5px;line-height:1.5;overflow-x:auto;margin:12px 0}
+pre code{background:none;padding:0;white-space:pre;font-size:inherit}
+a{color:var(--pine)}
+:focus-visible{outline:2px solid var(--pine);outline-offset:2px}
+
+.page{max-width:1080px;margin:0 auto;padding:40px 24px 80px}
+header.masthead{border-bottom:1px solid var(--line);padding-bottom:28px;margin-bottom:8px}
+.eyebrow{font-family:"JetBrains Mono",monospace;font-size:11.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+h1{font-size:clamp(34px,5vw,52px);font-weight:800;letter-spacing:-.035em;line-height:1.02;margin:10px 0 18px;text-wrap:balance}
+.lede{font-size:20px;line-height:1.45;max-width:var(--measure);margin:0 0 22px}
+.meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px 18px;max-width:760px}
+.meta div{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);line-height:1.5}
+.meta b{display:block;color:var(--ink);font-weight:500}
+
+nav.toc{display:flex;flex-wrap:wrap;gap:6px 14px;padding:18px 0 6px;border-bottom:1px solid var(--line-soft);margin-bottom:8px}
+nav.toc a{font-family:Archivo,sans-serif;font-size:12.5px;text-decoration:none;color:var(--muted)}
+nav.toc a b{color:var(--ink);font-weight:600;margin-right:4px}
+nav.toc a:hover{color:var(--pine)}
+
+section{padding:44px 0 8px;scroll-margin-top:24px}
+section+section{border-top:1px solid var(--line-soft)}
+.sec-n{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);letter-spacing:.06em}
+h2{font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-.028em;margin:4px 0 14px;line-height:1.12;text-wrap:balance}
+h3{font-size:19px;font-weight:700;letter-spacing:-.015em;margin:28px 0 8px}
+h4{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:22px 0 8px}
+p{max-width:var(--measure);margin:0 0 14px}
+ul,ol{max-width:var(--measure);padding-left:22px;margin:0 0 14px}
+li{margin:0 0 6px}
+li::marker{color:var(--muted)}
+.wide{max-width:none}
+
+.ref{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.pill{display:inline-block;font-family:Archivo,sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:2px 8px;border-radius:3px;line-height:1.6;vertical-align:middle}
+.pill.pine{background:var(--pine-soft);color:var(--pine)}
+.pill.amber{background:var(--amber-soft);color:var(--amber)}
+.pill.rust{background:var(--rust-soft);color:var(--rust)}
+.pill.flat{background:var(--surface-2);color:var(--muted)}
+
+.tbl-wrap{overflow-x:auto;margin:14px 0 18px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th{font-family:Archivo,sans-serif;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.45}
+tr:last-child td{border-bottom:0}
+td.num{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);white-space:nowrap}
+
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:18px 0 8px}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:14px 16px;box-shadow:var(--shadow)}
+.fact .k{font-family:"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.fact .v{font-family:Archivo,sans-serif;font-size:15px;font-weight:600;margin-top:4px;line-height:1.3}
+.fact p{font-size:14px;color:var(--muted);margin:6px 0 0}
+
+.decisions{display:grid;gap:10px;margin:16px 0 8px}
+.dec{display:grid;grid-template-columns:52px 1fr;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 16px}
+.dec .id{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:700;color:var(--pine);padding-top:3px}
+.dec b{font-family:Archivo,sans-serif;font-weight:700;font-size:15px}
+.dec p{font-size:14.5px;margin:4px 0 0;color:var(--ink);max-width:none}
+.dec .why{color:var(--muted)}
+
+.phase-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px;margin-top:6px}
+.phase-head .cost{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted)}
+.block{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin:14px 0}
+.block h4{margin-top:0}
+.block ul{max-width:none}
+.block p{max-width:none}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.two .block{margin:0}
+.accept li{list-style:none;position:relative;padding-left:22px}
+.accept li::before{content:"";position:absolute;left:0;top:.5em;width:12px;height:12px;border:1.5px solid var(--pine);border-radius:3px}
+
+.seq{display:grid;gap:8px;margin:16px 0}
+.seq-row{display:grid;grid-template-columns:70px 1fr auto;gap:14px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:10px 14px}
+.seq-row .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:var(--muted);letter-spacing:.06em}
+.seq-row .t{font-family:Archivo,sans-serif;font-weight:600;font-size:15px}
+.seq-row .t small{display:block;font-family:Newsreader,serif;font-weight:400;font-size:14px;color:var(--muted);margin-top:2px}
+.seq-row .d{font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);white-space:nowrap;text-align:right}
+@media (max-width:640px){.seq-row{grid-template-columns:60px 1fr}.seq-row .d{grid-column:2;text-align:left}}
+
+footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);font-family:"JetBrains Mono",monospace;font-size:11.5px;color:var(--muted);line-height:1.6}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="page">
+<header class="masthead">
+  <div class="eyebrow">Jobtron 6900 · engineering plan · follows the Workflow Rebuild</div>
+  <h1>Jobtron Polish Pass</h1>
+  <p class="lede">The rebuild made the agent obedient. It did not make the loop short. This plan removes the parts you repeat on every application and gives the parts you do by hand — tags, emails, follow-ups — a place to land in one sentence.</p>
+  <div class="meta">
+    <div>repo<b>jobtron6900</b></div>
+    <div>branch<b>workflow-rebuild</b></div>
+    <div>baseline<b>74 tests passing, 0 committed</b></div>
+    <div>phases<b>8, first one is a commit</b></div>
+    <div>schema<b>migrations 4 · 5 · 6</b></div>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#s00"><b>00</b>Where it stands</a>
+  <a href="#s01"><b>01</b>Pain → cause</a>
+  <a href="#s02"><b>02</b>Decisions</a>
+  <a href="#p0"><b>P0</b>Ship it</a>
+  <a href="#p1"><b>P1</b>Tags &amp; search</a>
+  <a href="#p2"><b>P2</b>Attention rail</a>
+  <a href="#p3"><b>P3</b>Log an update</a>
+  <a href="#p4"><b>P4</b>Fewer approvals</a>
+  <a href="#p5"><b>P5</b>Page capture</a>
+  <a href="#p6"><b>P6</b>Inferred flags</a>
+  <a href="#p7"><b>P7</b>Standard answers</a>
+  <a href="#s11"><b>11</b>Sequence</a>
+  <a href="#s12"><b>12</b>Not doing</a>
+</nav>
+
+<section id="s00">
+  <div class="sec-n">00</div>
+  <h2>Where it stands</h2>
+  <p>Three analysts surveyed the working tree; a runner confirmed the suite. The core is sound. What follows is polish on a machine that already works.</p>
+  <div class="facts">
+    <div class="fact"><div class="k">Workflow</div><div class="v">Server-owned state machine, 11 steps</div><p>One tool, one sentence, repeat. <span class="ref">workflow.py:27–100</span>, decision chain <span class="ref">core.py:845–951</span>.</p></div>
+    <div class="fact"><div class="k">Tests</div><div class="v">74 / 74 pass · exit 0</div><p>Up from 18. Nothing committed on <code>workflow-rebuild</code>. Never run against a real posting.</p></div>
+    <div class="fact"><div class="k">Tracking</div><div class="v">Calendar, events, status counts, notes</div><p>No tags, no search, no "what needs me today", no follow-up nudges. <span class="ref">db.py:24–30</span>, <span class="ref">core.py:614–620</span>.</p></div>
+    <div class="fact"><div class="k">Repetition</div><div class="v">Every draft is a separate stop</div><p>Answers, resume, cover letter each wait for approval — even bank answers you already approved. <span class="ref">core.py:434–443</span>.</p></div>
+  </div>
+</section>
+
+<section id="s01">
+  <div class="sec-n">01</div>
+  <h2>Pain → cause → phase</h2>
+  <p>Every line here was reproduced against the code. Nothing is inferred from the prompt.</p>
+  <div class="tbl-wrap"><table>
+    <thead><tr><th>You feel</th><th>Because</th><th>Where</th><th>Fixed in</th></tr></thead>
+    <tbody>
+      <tr><td>I can't find an application without scrolling</td><td><code>ApplicationService.list</code> filters by status only; no text query, no tag</td><td class="num">core.py:614–620</td><td><b>P1</b></td></tr>
+      <tr><td>I want to put little tags on things</td><td><code>applications</code> has <code>notes</code> and nothing else free-form</td><td class="num">db.py:24–30</td><td><b>P1</b></td></tr>
+      <tr><td>I don't know which ones are going stale</td><td>No last-activity concept; the Upcoming rail only shows events you typed in</td><td class="num">core.py:515–527</td><td><b>P2</b></td></tr>
+      <tr><td>I forget to follow up</td><td>Nothing writes a follow-up event; lifecycle events are hidden from Upcoming by design</td><td class="num">core.py:727–733</td><td><b>P2</b></td></tr>
+      <tr><td>Logging an email is five tool calls</td><td>Event, status, tag and contact are separate writes; no shortcut like <code>workflow.start_from_url</code></td><td class="num">server.py:184–193</td><td><b>P3</b></td></tr>
+      <tr><td>I approve the same answer again on every app</td><td><code>apply_bank_answer</code> saves with the caller's <code>approved</code> flag; the workflow always passes false</td><td class="num">core.py:434–443 · workflow.py:64–71</td><td><b>P4</b></td></tr>
+      <tr><td>Resume, then wait; cover letter, then wait</td><td><code>prepare_resume</code> gates on an <em>approved</em> version, so each draft is its own stop</td><td class="num">core.py:915–927</td><td><b>P4</b></td></tr>
+      <tr><td>"Please paste the posting" on every Workday job</td><td>Server-side <code>httpx</code> fetch; JS-rendered pages return <code>empty</code>; a failed attempt is never retried</td><td class="num">posting.py:173–179 · core.py:869–876</td><td><b>P5</b></td></tr>
+      <tr><td>I have to tell it a cover letter is required</td><td><code>cover_letter_required</code> is only set by <code>applications.set_requirements</code></td><td class="num">server.py:250–251 · core.py:836</td><td><b>P6</b></td></tr>
+      <tr><td>The same six ATS questions, worded slightly differently</td><td>Bank search is token overlap; nothing seeds the bank with the standard set</td><td class="num">core.py:413–432</td><td><b>P7</b></td></tr>
+      <tr><td>I added the same job twice</td><td><code>find_by_url</code> guards <code>start_from_url</code> only, not <code>applications.create</code></td><td class="num">workflow.py:188 · core.py:641–645</td><td><b>P1</b></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="s02">
+  <div class="sec-n">02</div>
+  <h2>Decisions, already made</h2>
+  <p>These are fixed so no phase reopens them. Two of them change what the workflow engine means by "done" (D3, D4); they are recorded here as architecture, with the invariant each one keeps.</p>
+  <div class="decisions">
+    <div class="dec"><div class="id">D1</div><div><b>Tags are a text column, not a table.</b><p><code>applications.tags TEXT NOT NULL DEFAULT ''</code>, stored as a sorted, lowercase, comma-joined set. Filter with <code>',' || tags || ',' LIKE '%,x,%'</code>.</p><p class="why">Single-user SQLite. A join table buys nothing you can feel and costs a migration, a service, and three tests.</p></div></div>
+    <div class="dec"><div class="id">D2</div><div><b>"Attention" is computed, never stored.</b><p>Last activity is <code>max(events.starts_at_utc where kind ≠ lifecycle, applied_at, created_at)</code>. Staleness thresholds live in one constants block, not in rows.</p><p class="why">Stored timestamps drift the moment a write path forgets them. Derived values cannot.</p></div></div>
+    <div class="dec"><div class="id">D3</div><div><b>The server auto-applies bank answers that were already approved and fully match.</b><p>Inside <code>progress()</code>, before emitting <code>answer_required_question</code>: if the top bank hit is approved and every token of the question matched (<code>coverage == 1.0</code>), apply it as an approved answer with <code>source_label = "question_bank:auto"</code> and move on. Anything less goes to the agent as today.</p><p class="why">You approved it once. Approving it again is not a safety check; it is a tax. The invariant that matters — <em>the agent never invents a fact</em> — is untouched because the text came from you. Invariant kept: no unapproved content is ever auto-approved.</p></div></div>
+    <div class="dec"><div class="id">D4</div><div><b>One review stop, not one per draft.</b><p><code>prepare_resume</code> and <code>prepare_cover_letter</code> now gate on <em>any version existing</em>, not an approved one. A new step, <code>review_drafts</code>, sits before <code>confirm_submission</code> and stops once with the full list of unapproved items and the frontend URL. New tool <code>applications.approve_drafts</code>.</p><p class="why">The step contract is preserved: working steps narrate, stopping steps ask, and the test that asserts a step cannot do both still passes. Status stays user-owned; nothing auto-advances.</p></div></div>
+    <div class="dec"><div class="id">D5</div><div><b>Emails are classified by the agent, recorded by one server call.</b><p><code>applications.log_update</code> writes event + status + tags + optional contact atomically. The agent reads the email, proposes one sentence, and calls it on "yes". Same split as <code>start_from_url</code>: the LLM interprets, the server persists.</p><p class="why">No email ingestion, no parsing heuristics in Python. You said you're fine handling email; the system just has to make the record cost one word.</p></div></div>
+    <div class="dec"><div class="id">D6</div><div><b>Events get a <code>kind</code>: manual, lifecycle, reminder.</b><p>Migration 5 backfills <code>lifecycle</code> where <code>dedupe_key ≠ ''</code>. <code>upcoming()</code> hides <code>lifecycle</code> only. A follow-up reminder is <code>kind = reminder</code> with a dedupe key, so it is idempotent <em>and</em> visible.</p><p class="why">Today "automatic" and "hidden" are the same bit. A reminder needs to be automatic and shown.</p></div></div>
+    <div class="dec"><div class="id">D7</div><div><b>Page capture uses the agent's browser, never the server's.</b><p>New tool <code>questions.detect_from_text</code> runs the existing <code>detect_questions</code> on text the agent obtained — from its own browser tool if it has one, from a paste if not. Playwright stays out of Jobtron.</p><p class="why">Keeps the rebuild's exclusion intact while removing the reason it hurt.</p></div></div>
+    <div class="dec"><div class="id">D8</div><div><b>Inferred flags never overwrite what you set.</b><p><code>cover_letter_required_source ∈ {'', 'inferred', 'user'}</code>. Inference runs only while the source is empty.</p><p class="why">A guess that can be silently wrong must be visibly a guess.</p></div></div>
+  </div>
+</section>
+
+<section id="p0">
+  <div class="sec-n">Phase 0</div>
+  <h2>Ship what exists</h2>
+  <div class="phase-head"><span class="pill pine">no deps</span><span class="cost">~½ session</span></div>
+  <p>Nothing below is worth doing on an uncommitted branch that has never met a real posting.</p>
+  <div class="block">
+    <h4>Do</h4>
+    <ul>
+      <li>Commit the working tree on <code>workflow-rebuild</code> as one commit per plan phase if the history is recoverable from the diff, otherwise one commit. Do not squash into master yet.</li>
+      <li>Run the full loop once against a real posting from each of: a static HTML board (Greenhouse/Lever), a JS-rendered ATS (Workday), and a blocked site. Record what <code>fetch_posting</code> returned for each in a Serena memory — this is the evidence P5 is scoped against.</li>
+      <li>Add <code>CLAUDE.md</code> at the repo root: how to run tests, that <code>app/main.py</code> must stay lazy so imports never touch the live DB, that <code>JOBTRON_DATA_DIR</code> must be set in any manual run, and the step contract ("working steps narrate, stopping steps ask").</li>
+    </ul>
+  </div>
+  <div class="block accept">
+    <h4>Accept when</h4>
+    <ul>
+      <li><code>git log</code> shows the rebuild; <code>uv run pytest -q</code> still reports 74 passed.</li>
+      <li>Three real-posting outcomes are recorded with their <code>status</code> and <code>reason</code>.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="p1">
+  <div class="sec-n">Phase 1</div>
+  <h2>Tags, search, and one job per URL</h2>
+  <div class="phase-head"><span class="pill pine">migration 4</span><span class="pill flat">needs P0</span><span class="cost">~1 session</span></div>
+  <p>The tracking pain you named first, and the cheapest to remove.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Schema · <span class="ref">app/db.py:138–141</span></h4>
+      <p>Append <code>(4, _migration_4_tags)</code> to <code>MIGRATIONS</code>, following migration 3's shape (<span class="ref">db.py:130–134</span>):</p>
+      <pre><code>ALTER TABLE applications
+  ADD COLUMN tags TEXT NOT NULL DEFAULT '';</code></pre>
+      <p>Normalizer in <code>core.py</code>: <code>normalize_tags(raw: str | list[str]) -&gt; str</code> — split on comma, strip, lowercase, drop empties, dedupe, sort, join. Both <code>update()</code> and the new <code>tag()</code> call it.</p>
+    </div>
+    <div class="block">
+      <h4>Service · <span class="ref">core.py:614–620</span></h4>
+      <pre><code>list(status=None, tag=None, query=None)
+tag(application_id, add=(), remove=())
+create(...)  # returns existing row +
+             # duplicate=True when url matches</code></pre>
+      <p><code>query</code> is a case-insensitive <code>LIKE</code> across <code>c.name</code>, <code>formal_title</code>, <code>location</code>, <code>tags</code>. <code>create</code> consults <code>find_by_url</code> (<span class="ref">workflow.py:188</span>) unless <code>allow_duplicate=True</code>.</p>
+    </div>
+  </div>
+  <div class="block">
+    <h4>Surfaces</h4>
+    <ul>
+      <li><b>MCP</b> <span class="ref">server.py:254–270</span> — <code>applications.update</code> gains <code>tags</code>; new <code>applications.tag</code>; <code>applications.list</code> gains <code>tag</code>, <code>query</code>. Tool descriptions state tags are lowercase words, comma-separated.</li>
+      <li><b>Web list/dashboard</b> <span class="ref">dashboard.html:7</span> — a tag chip row beside the status chips; a single search input that hits <code>?q=</code>. Chips are the tags that currently exist, sorted by count.</li>
+      <li><b>Web detail</b> <span class="ref">detail.html:24</span> — <code>tags</code> input inside the existing "Edit job record" form, posting to the existing <code>POST /{id}</code> (<span class="ref">applications.py:57</span>).</li>
+      <li><b>MCP UI</b> <span class="ref">ui.py:400</span> — tags rendered as chips on each row and on detail.</li>
+    </ul>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · tests/test_tags.py</h4>
+      <ul>
+        <li>normalize: <code>" Remote, remote ,REFERRAL"</code> → <code>"referral,remote"</code></li>
+        <li>list by tag matches whole tags only (<code>remote</code> ≠ <code>remote-ok</code>)</li>
+        <li>query matches company, title, location, tag; no match on job description</li>
+        <li>create with a known URL returns the existing id and <code>duplicate=True</code>; <code>allow_duplicate</code> bypasses</li>
+        <li>migration 4 on a v3 database: existing rows read back with <code>tags == ''</code></li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>"Show me my remote applications" resolves to one <code>applications.list(tag="remote")</code> call.</li>
+        <li>Pasting a URL already on file does not create a second row from either entry point.</li>
+        <li>Dashboard renders tag chips and the search box with zero applications and with fifty.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p2">
+  <div class="sec-n">Phase 2</div>
+  <h2>The attention rail and follow-up reminders</h2>
+  <div class="phase-head"><span class="pill pine">migration 5</span><span class="pill flat">independent of P1</span><span class="cost">~1–2 sessions</span></div>
+  <p>"What needs me today?" gets a real answer, in the browser and from the agent, from data that already exists.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Schema · migration 5</h4>
+      <pre><code>ALTER TABLE events
+  ADD COLUMN kind TEXT NOT NULL DEFAULT 'manual';
+UPDATE events SET kind = 'lifecycle'
+  WHERE dedupe_key &lt;&gt; '';</code></pre>
+      <p><code>EventService.add</code> (<span class="ref">core.py:533–559</span>) gains <code>kind="manual"</code>; the lifecycle writer at <span class="ref">core.py:727–733</span> passes <code>kind="lifecycle"</code>. <code>upcoming()</code> (<span class="ref">core.py:523</span>) changes its predicate from <code>dedupe_key = ''</code> to <code>kind &lt;&gt; 'lifecycle'</code>.</p>
+    </div>
+    <div class="block">
+      <h4>Reminder on Applied</h4>
+      <p>Where <code>applied_at</code> is stamped (<span class="ref">core.py:722</span>), also write one event: <code>event_type="Follow-up"</code>, <code>kind="reminder"</code>, all-day, <code>starts_at_utc = applied_at + FOLLOW_UP_DAYS</code> (7), <code>dedupe_key = f"follow_up:{id}:1"</code>. Idempotent by key; visible in Upcoming by kind. A reminder is <em>resolved</em> when any <code>manual</code> event on the same application is dated after it, or the status changed after it.</p>
+    </div>
+  </div>
+  <div class="block">
+    <h4>Service · <code>ApplicationService.attention(now) -&gt; dict</code></h4>
+    <p>Four buckets, each a list of <code>{application_id, company_name, formal_title, status, days, last_activity_at, tags, reason}</code>. Thresholds are module constants: <code>STALE_DAYS = 14</code>, <code>IDLE_DRAFT_DAYS = 7</code>, <code>HORIZON_DAYS = 7</code>.</p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Bucket</th><th>Rule</th><th>Reads as</th></tr></thead>
+      <tbody>
+        <tr><td><code>upcoming</code></td><td><code>kind ≠ lifecycle</code>, <code>starts_at_utc</code> within the next <code>HORIZON_DAYS</code></td><td>"Interview with Boeing, Thursday"</td></tr>
+        <tr><td><code>follow_up_due</code></td><td>unresolved <code>reminder</code> with <code>starts_at_utc ≤ now</code></td><td>"Applied 9 days ago, no reply — follow up"</td></tr>
+        <tr><td><code>stale</code></td><td>status ∈ {Applied, Assessment, Interviewing}, last activity older than <code>STALE_DAYS</code></td><td>"Interviewing, quiet for 21 days"</td></tr>
+        <tr><td><code>idle_drafts</code></td><td>status ∈ {Draft, Ready to Apply}, created older than <code>IDLE_DRAFT_DAYS</code>, no manual event</td><td>"Drafted 12 days ago, never sent"</td></tr>
+      </tbody>
+    </table></div>
+    <p>Terminal statuses (Rejected, Withdrawn, Closed) never appear. Sorted within a bucket by <code>days</code> descending.</p>
+  </div>
+  <div class="block">
+    <h4>Surfaces</h4>
+    <ul>
+      <li><b>Web dashboard</b> <span class="ref">dashboard.py:64–78</span> — add <code>attention</code> to the context; render a "Today" rail above Upcoming (<span class="ref">dashboard.html:25</span>). Each row links to the detail page and carries the same status dot the grid uses (<span class="ref">palette.py:10–20</span>). Empty state is one line: "Nothing is waiting on you."</li>
+      <li><b>MCP</b> — new tool <code>applications.attention</code>. Instruction block gains one shortcut: <em>"What should I do today?" → <code>applications.attention</code>, then <code>ui.show_dashboard</code>.</em></li>
+      <li><b>MCP UI</b> <span class="ref">ui.py:400</span> — the applications view opens with the Today list when it is non-empty.</li>
+      <li><b>Detail page</b> — a single line under the title: "Last activity 9 days ago · next: Follow-up on Sep 16."</li>
+    </ul>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · tests/test_attention.py</h4>
+      <ul>
+        <li>Migration 5 on a v4 database: existing dedupe-keyed rows become <code>lifecycle</code>, others <code>manual</code>; <code>upcoming()</code> output unchanged before/after.</li>
+        <li>Marking Applied creates exactly one reminder; marking Applied again creates none.</li>
+        <li>A manual event dated after the reminder resolves it; one dated before does not.</li>
+        <li>Each bucket with a fixed <code>now</code>: one row that qualifies, one a day short of the threshold, one terminal-status row that must not appear.</li>
+        <li><code>attention()</code> on an empty database returns four empty lists, not an error.</li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>The Today rail shows the follow-up reminder seven days after a real Applied, and it disappears after you log the recruiter's reply.</li>
+        <li>"What should I do today?" produces the same list in the chat as on the page.</li>
+        <li>No lifecycle noise returns to the Upcoming rail (regression guard from the rebuild).</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p3">
+  <div class="sec-n">Phase 3</div>
+  <h2>Log an update in one sentence</h2>
+  <div class="phase-head"><span class="pill flat">needs P1 + P2</span><span class="cost">~1 session</span></div>
+  <p>You paste the recruiter's email. The agent says: <em>"Log Recruiter Contact on Boeing for today, move to Interviewing, tag <code>phone-screen</code>?"</em> You say yes. That is the whole interaction.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Tool · <code>applications.log_update</code></h4>
+      <pre><code>log_update(
+  application_id: int,
+  event_type: str,          # free text, UI list suggested
+  occurred_at: str,         # display-local or ISO
+  notes: str = "",
+  status: str | None = None,
+  add_tags: list[str] = [],
+  contact: {name, role, email, phone} | None = None,
+) -&gt; {application, event, status_changed: bool}</code></pre>
+      <p>One transaction: <code>events.add(kind="manual")</code>, then <code>set_status</code> if given (which still writes its own lifecycle event and the Applied guard at <span class="ref">server.py:280–286</span> still applies — <code>log_update</code> may not set Applied), then <code>tag(add=…)</code>, then contact upsert (<span class="ref">applications.py:131–133</span> pattern). Any failure rolls back all four.</p>
+    </div>
+    <div class="block">
+      <h4>Agent contract</h4>
+      <p>Instruction block gains a fourth shortcut, in the same register as the other three:</p>
+      <pre><code>A pasted email or status update about a job
+-&gt; applications.list(query=&lt;company&gt;)
+-&gt; propose ONE sentence naming event, date,
+   status change (if any), tags (if any)
+-&gt; on "yes" call applications.log_update once.
+If more than one application matches, ask
+which; never guess.</code></pre>
+      <p>The tool description restates: never set Applied here; never invent a date — use today if the email has none and say so.</p>
+    </div>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · tests/test_log_update.py</h4>
+      <ul>
+        <li>Full call writes one manual event, one lifecycle event, tags merged, contact created — verified in one read.</li>
+        <li><code>status="Applied"</code> is refused with the same message as <code>set_status</code>.</li>
+        <li>A contact with an existing email on the same application updates rather than duplicates.</li>
+        <li>A failing status (unknown value) leaves no event behind.</li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>A pasted rejection email becomes a Rejected status + event + <code>rejected</code> tag after one "yes".</li>
+        <li>The follow-up reminder from P2 resolves as a side effect.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p4">
+  <div class="sec-n">Phase 4</div>
+  <h2>Fewer approvals</h2>
+  <div class="phase-head"><span class="pill amber">workflow semantics · D3, D4</span><span class="pill flat">needs P0</span><span class="cost">~1–2 sessions</span></div>
+  <p>The single largest cut to per-application effort. Two changes to <code>progress()</code>, one new step, one new tool.</p>
+  <div class="block">
+    <h4>A · Auto-apply approved bank answers · <span class="ref">core.py:902–913</span></h4>
+    <p>Before emitting <code>answer_required_question</code> for a question, the server runs <code>search_bank(question.text, limit=1)</code>. <code>search_bank</code> (<span class="ref">core.py:413–432</span>) adds <code>coverage = matched_tokens / query_tokens</code> to each hit. If the hit is <code>approved</code> and <code>coverage == 1.0</code>, call <code>apply_bank_answer(question_id, entry_id, approved=True, source_label="question_bank:auto")</code>, increment <code>usage_count</code>, and re-evaluate. The loop is bounded by the number of required questions. Only questions that survive reach the agent, whose step text is unchanged.</p>
+    <p>The application detail page marks auto-applied answers with their source label so you can see — and override — what was reused.</p>
+  </div>
+  <div class="block">
+    <h4>B · One review stop · <span class="ref">core.py:915–935</span> · <span class="ref">workflow.py:72–93</span></h4>
+    <p>Gate changes in the decision chain:</p>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Code</th><th>Today emits when</th><th>After</th></tr></thead>
+      <tbody>
+        <tr><td><code>prepare_resume</code></td><td>no <em>approved</em> <code>application_resume</code></td><td>no <code>application_resume</code> version at all</td></tr>
+        <tr><td><code>prepare_cover_letter</code></td><td>required and no <em>approved</em> <code>cover_letter</code></td><td>required and no <code>cover_letter</code> version at all</td></tr>
+        <tr><td><code>review_drafts</code> <span class="pill pine">new</span></td><td>—</td><td>any latest answer version or latest document version is unapproved</td></tr>
+        <tr><td><code>confirm_submission</code></td><td>everything approved, not applied</td><td>unchanged</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>STEP_MAP</code> gains <code>"review_drafts": ("review_drafts", None, "Say say_to_user word for word, including the URL, then stop. When the user approves, call applications.approve_drafts with the ids they named, or all=true.", None)</code>. <code>next_action</code> for it carries <code>pending: [{kind: "answer"|"document", id, label}]</code> and <code>frontend_url</code>. The question text lists the pending items in one sentence.</p>
+    <p>New tool <code>applications.approve_drafts(application_id, answer_ids=[], document_ids=[], all=False)</code> — calls the existing <code>documents.approve</code> (<span class="ref">core.py:182–193</span>) and the answer-approval path per id. The <code>percent_complete</code> checks (<span class="ref">core.py:789–838</span>) are unchanged: "resume approved" is still a required check; it is simply satisfied later, in one go.</p>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · extend tests/test_workflow_engine.py</h4>
+      <ul>
+        <li>An approved bank entry with full coverage is applied without the agent ever seeing <code>answer_question</code>; the answer row carries <code>source_label = "question_bank:auto"</code>.</li>
+        <li>An unapproved entry, or coverage 0.8, still yields <code>answer_question</code>.</li>
+        <li>From "all questions answered, no documents": steps are <code>generate_resume</code> → <code>generate_cover_letter</code> (if required) → <code>review_drafts</code> → stops. No intermediate stop.</li>
+        <li><code>review_drafts</code> is a stopping step: <code>waits_for_user</code> is true and <code>say_template</code> is None (the existing "cannot both narrate and ask" assertion covers it once it is in <code>STEP_MAP</code>).</li>
+        <li><code>approve_drafts(all=True)</code> advances directly to <code>confirm_submission</code>.</li>
+        <li>Total-coverage test of <code>STEP_MAP</code> still passes with the new code.</li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>A second application to a company using the same six standard questions stops exactly once before "did you submit?".</li>
+        <li>No answer or document is ever marked approved unless it came from an approved bank entry or from <code>approve_drafts</code>.</li>
+        <li>Rebuild finding F8 stays closed: the agent's choice set is still one tool per step.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p5">
+  <div class="sec-n">Phase 5</div>
+  <h2>Page capture through the agent's own browser</h2>
+  <div class="phase-head"><span class="pill flat">needs P0 evidence</span><span class="cost">~1 session</span></div>
+  <p>The rebuild fetched server-side and degraded honestly to "please paste". That is still right for the server. But the agent that calls Jobtron usually has a browser tool of its own; let it do the reading.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Tool · <code>questions.detect_from_text</code></h4>
+      <pre><code>detect_from_text(
+  application_id: int,
+  page_text: str,
+  source: "browser" | "paste",
+) -&gt; {detected_questions, count,
+      stored_job_description: bool}</code></pre>
+      <p>Runs <code>detect_questions</code> (<span class="ref">posting.py:112–130</span>) on the text; if <code>job_description</code> is empty, stores the text as the description; sets <code>questions_extraction_status = "ok"</code> and <code>questions_extraction_note = source</code> (<span class="ref">core.py:756–762</span>). Text is capped at the same 2 MB the fetcher uses.</p>
+      <p><code>questions.extract_from_posting</code> gains <code>retry: bool = False</code>, which clears the recorded status before fetching.</p>
+    </div>
+    <div class="block">
+      <h4>Workflow · new step <code>capture_page_text</code></h4>
+      <p>Emitted when <code>questions_extraction_status ∈ {blocked, empty, error}</code> and <code>questions_reviewed</code> is false — before <code>inventory_questions</code> (<span class="ref">core.py:877–895</span>). <code>then_call = "questions.detect_from_text"</code>.</p>
+      <pre><code>you_must:
+"If you have a browser tool, open next_action.url,
+ read the page's visible text, and call
+ questions.detect_from_text with source='browser'.
+ If you have no browser tool, say say_to_user word
+ for word and stop; when the user pastes the page,
+ call questions.detect_from_text with source='paste'."</code></pre>
+      <p>This is the one step whose wait depends on the client, not the server. It is a deliberate, documented exception to the "server decides whether to stop" rule; <code>waits_for_user</code> is reported false and the fallback is in the instruction. <code>inventory_questions</code> remains the terminal fallback if detection finds nothing.</p>
+    </div>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · extend tests/test_posting.py, test_workflow_engine.py</h4>
+      <ul>
+        <li><code>detect_from_text</code> on a saved Workday page fixture finds the same questions the fetcher would on static HTML.</li>
+        <li>After a <code>blocked</code> fetch the next step is <code>capture_page_text</code>, not <code>inventory_questions</code>.</li>
+        <li><code>retry=True</code> clears status and refetches; <code>retry=False</code> on a recorded status returns the recorded result without a network call.</li>
+        <li>Empty page text does not overwrite a non-empty job description.</li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>The Workday posting from P0's evidence run completes question extraction without a paste, in a client with a browser tool.</li>
+        <li>The same posting in a client without one still lands on a paste prompt, once.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p6">
+  <div class="sec-n">Phase 6</div>
+  <h2>Inferred flags</h2>
+  <div class="phase-head"><span class="pill pine">migration 6</span><span class="pill flat">independent</span><span class="cost">~½ session</span></div>
+  <p>Small, but it removes a question the agent asks on every application.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Cover letter</h4>
+      <pre><code>ALTER TABLE applications
+  ADD COLUMN cover_letter_required_source
+  TEXT NOT NULL DEFAULT '';</code></pre>
+      <p>On every write of <code>job_description</code>, if <code>cover_letter_required_source == ''</code>: run <code>infer_cover_letter_required(text)</code> from <code>posting.py</code> — true when "cover letter" appears within 80 characters of <em>required</em>, <em>must</em>, <em>include</em>, <em>attach</em>, <em>submit</em>, or <em>upload</em>; false when it appears only near <em>optional</em>. Set the flag and <code>source = 'inferred'</code>. <code>applications.set_requirements</code> (<span class="ref">server.py:250–251</span>) sets <code>source = 'user'</code> and wins forever after.</p>
+      <p><code>progress()</code> exposes the source in the cover-letter check's label ("Cover letter (required — inferred from posting)") so the agent can say it and you can correct it.</p>
+    </div>
+    <div class="block">
+      <h4>Tests · tests/test_inference.py</h4>
+      <ul>
+        <li>Six posting snippets: three that require, two that mark optional, one that does not mention it. Exact expected flags.</li>
+        <li>A user-set value survives a later description update that would infer differently.</li>
+        <li>Migration 6 leaves existing rows with <code>source = ''</code>, so a re-saved description infers once.</li>
+      </ul>
+      <h4 style="margin-top:18px">Accept when</h4>
+      <ul class="accept" style="padding-left:0">
+        <li>A posting that says "a cover letter is required" produces a <code>generate_cover_letter</code> step with no <code>set_requirements</code> call in the transcript.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="p7">
+  <div class="sec-n">Phase 7</div>
+  <h2>Standard answers, asked once</h2>
+  <div class="phase-head"><span class="pill flat">needs P4</span><span class="cost">~1 session</span></div>
+  <p>Most ATS forms ask the same dozen things. Answer them once during setup; P4 then applies them silently on every application.</p>
+  <div class="two">
+    <div class="block">
+      <h4>Seed · <code>app/services/standard_questions.py</code></h4>
+      <p>A literal list of canonical entries, each with a <code>canonical_question</code> and a deliberate <code>keywords</code> set tuned for the token matcher (<span class="ref">core.py:413–432</span>). Initial twelve: work authorization · sponsorship now or future · salary expectation · earliest start date · willing to relocate · remote/hybrid/onsite preference · how did you hear about us · previously applied or employed here · security clearance · veteran / disability / EEO voluntary disclosure · LinkedIn / portfolio URL · years of experience in role.</p>
+      <p><code>question_bank.seed_defaults()</code> inserts any missing canonical entries with an empty answer and <code>approved = 0</code>. Because <code>search_bank</code> returns approved entries only, unanswered seeds never surface during an application.</p>
+    </div>
+    <div class="block">
+      <h4>Setup surface</h4>
+      <ul>
+        <li><code>candidate.readiness</code> (<span class="ref">core.py:57–107</span>) gains a <em>non-blocking</em> item: <code>standard_answers: {answered: n, total: 12}</code>. <code>capability</code> is unchanged by it.</li>
+        <li><code>ui.show_setup</code> and the <code>/profile</code> page render the twelve as a short form; saving an answer marks the entry <code>approved = 1</code>.</li>
+        <li>Instruction shortcut: <em>"What am I missing?"</em> already routes to readiness; it now mentions unanswered standard questions after profile and resume.</li>
+      </ul>
+    </div>
+  </div>
+  <div class="two">
+    <div class="block">
+      <h4>Tests · tests/test_standard_questions.py</h4>
+      <ul>
+        <li>Seeding twice inserts twelve once.</li>
+        <li>For each canonical entry, three real-world phrasings (collected from P0's evidence run and public ATS forms) reach <code>coverage == 1.0</code> against it, and one unrelated question does not match any seed.</li>
+        <li>An unanswered seed never appears in <code>search_bank</code> results.</li>
+      </ul>
+    </div>
+    <div class="block accept">
+      <h4>Accept when</h4>
+      <ul>
+        <li>With all twelve answered, a Greenhouse application whose questions are all standard reaches <code>generate_resume</code> with zero <code>answer_question</code> steps.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="s11">
+  <div class="sec-n">11</div>
+  <h2>Sequence</h2>
+  <p>P1 and P2 are the tracking fixes and are independent of each other; do them first because they are what you asked for first. P4 is the biggest single win and only needs P0.</p>
+  <div class="seq">
+    <div class="seq-row"><div class="n">P0</div><div class="t">Ship what exists<small>Commit, real-posting evidence, CLAUDE.md</small></div><div class="d">~½ · no deps</div></div>
+    <div class="seq-row"><div class="n">P1</div><div class="t">Tags, search, URL dedupe<small>Migration 4</small></div><div class="d">~1 · P0</div></div>
+    <div class="seq-row"><div class="n">P2</div><div class="t">Attention rail + follow-up reminders<small>Migration 5, event kinds</small></div><div class="d">~1–2 · P0</div></div>
+    <div class="seq-row"><div class="n">P3</div><div class="t">Log an update<small>One tool, one shortcut</small></div><div class="d">~1 · P1, P2</div></div>
+    <div class="seq-row"><div class="n">P4</div><div class="t">Fewer approvals<small>Auto-apply bank, single review stop</small></div><div class="d">~1–2 · P0</div></div>
+    <div class="seq-row"><div class="n">P5</div><div class="t">Page capture via agent browser<small>detect_from_text, retry</small></div><div class="d">~1 · P0</div></div>
+    <div class="seq-row"><div class="n">P6</div><div class="t">Inferred cover-letter flag<small>Migration 6</small></div><div class="d">~½ · none</div></div>
+    <div class="seq-row"><div class="n">P7</div><div class="t">Standard answers<small>Seed + setup form</small></div><div class="d">~1 · P4</div></div>
+  </div>
+  <p><b>Delegation shape.</b> Each phase is one <code>sonnet-coder</code> packet, bounded to the files named above, with the tests listed as its acceptance criteria; P4 is the one that may warrant <code>opus-engineer</code> because it touches the decision chain and three tools at once. Every phase ends with a separate runner pass of the full suite and a first-pass review before it is accepted. Migrations are numbered in phase order; if P6 lands before P2, renumber — never reuse a number.</p>
+  <p><b>After the pass.</b> Two items are real but not urgent, and are left out on purpose: a structured autofill payload (field → value map the agent's browser can fill) and trimming the 43-tool MCP surface to what <code>STEP_MAP</code> and the shortcuts actually name. Both are their own plan.</p>
+</section>
+
+<section id="s12">
+  <div class="sec-n">12</div>
+  <h2>Not doing</h2>
+  <ul>
+    <li><b>Email ingestion.</b> No IMAP, no Gmail API, no parsing. You classify; Jobtron records. P3 is the whole of the email story.</li>
+    <li><b>Playwright in the server.</b> The rebuild's exclusion stands. P5 uses whatever browser the <em>client</em> already has.</li>
+    <li><b>Auto-submitting.</b> Still permanent. The Applied guard is not touched by any phase; <code>log_update</code> explicitly cannot set it.</li>
+    <li><b>Auto-advancing status.</b> Reminders and attention buckets are derived views. Nothing changes a status except you.</li>
+    <li><b>Fuzzy or embedding search in the question bank.</b> P7's keywords plus the existing token matcher are enough for the standard set; anything non-standard still goes to the agent, which is an LLM and can judge.</li>
+    <li><b>Per-application "considered academic documents" step.</b> Flagged during survey, then dropped: the agent does that work, not you. It costs turns, not effort.</li>
+  </ul>
+</section>
+
+<footer>Jobtron 6900 · polish pass · surveyed against app/services/core.py, app/services/workflow.py, app/services/posting.py, app/db.py, app/mcp/server.py, app/routes/*, app/templates/* on branch workflow-rebuild · 74 tests passing at time of writing</footer>
+</div>
