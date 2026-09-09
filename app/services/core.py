@@ -9,7 +9,7 @@ from typing import Any, Literal
 from app.db import Database
 from app.services.extraction import extract_document_text
 from app.services.palette import status_color
-from app.services.posting import MAX_BYTES, detect_questions_from_text
+from app.services.posting import MAX_BYTES, detect_questions_from_text, infer_cover_letter_required
 from app.services.timeutil import local_day, local_timezone, parse_stored, to_local, today_local
 from app.storage import FileStorage
 
@@ -803,6 +803,9 @@ class ApplicationService:
                 ),
             )
             application_id = int(cur.lastrowid or 0)
+        description = str(fields.get("job_description", "") or "")
+        if description.strip():
+            self._infer_cover_letter(application_id, description)
         self._record_lifecycle_event(
             application_id,
             "Drafted",
@@ -821,6 +824,28 @@ class ApplicationService:
                WHERE rtrim(trim(a.url),'/')=? ORDER BY a.id LIMIT 1""",
             (target,),
         )
+
+    def _infer_cover_letter(self, application_id: int, text: str) -> None:
+        """Guess `cover_letter_required` from posting text, once, ever (D8).
+
+        A no-op the moment `cover_letter_required_source` is anything but ''
+        -- a prior inference or an explicit user value both win forever after.
+        Also a no-op when the text says nothing decisive (`infer_cover_letter_required`
+        returns None). Never raises past this call: a bad guess is worse than none.
+        """
+        row = self.db.one(
+            "SELECT cover_letter_required_source FROM applications WHERE id=?", (application_id,)
+        )
+        if row is None or row["cover_letter_required_source"] != "":
+            return
+        inferred = infer_cover_letter_required(text)
+        if inferred is None:
+            return
+        with self.db.connect() as con:
+            con.execute(
+                "UPDATE applications SET cover_letter_required=?,cover_letter_required_source='inferred' WHERE id=?",
+                (int(inferred), application_id),
+            )
 
     def _record_lifecycle_event(self, application_id: int, event_type: str, notes: str, key: str, when: str = ""):
         """Automatic calendar entry. Never raises: a calendar problem must not
@@ -890,12 +915,17 @@ class ApplicationService:
                 "notes",
                 "questions_reviewed",
                 "cover_letter_required",
+                "cover_letter_required_source",
                 "tags",
             ]
             values = []
             for key in allowed:
                 if key in {"questions_reviewed", "cover_letter_required"}:
                     values.append(int(bool(fields.get(key, old[key]))))
+                elif key == "cover_letter_required_source":
+                    # Explicitly setting cover_letter_required is an owner move (D8):
+                    # it wins forever, regardless of what it is set to.
+                    values.append("user" if "cover_letter_required" in fields else old[key])
                 elif key == "tags":
                     values.append(normalize_tags(fields["tags"]) if "tags" in fields else old["tags"])
                 else:
@@ -910,6 +940,10 @@ class ApplicationService:
                 f"UPDATE applications SET company_id=?,{', '.join(f'{key}=?' for key in allowed)},applied_at=? WHERE id=?",
                 (company_id, *values, applied, application_id),
             )
+        if "job_description" in fields:
+            description = str(fields.get("job_description") or "")
+            if description.strip():
+                self._infer_cover_letter(application_id, description)
         if status != old["status"]:
             self._record_lifecycle_event(
                 application_id,
@@ -1187,6 +1221,14 @@ class ApplicationService:
         ]
         pending_drafts = self._pending_drafts(app, questions, documents)
 
+        # D8: say when a requirement is a guess, not a fact, so the agent can
+        # relay it and the user can correct it.
+        cover_letter_label = "Cover letter approved"
+        if app["cover_letter_required"] and app["cover_letter_required_source"] == "inferred":
+            cover_letter_label = "Cover letter (required — inferred from posting)"
+        elif app["cover_letter_required"] and app["cover_letter_required_source"] == "user":
+            cover_letter_label = "Cover letter (required)"
+
         checks = [
             {
                 "key": "candidate_profile",
@@ -1232,7 +1274,7 @@ class ApplicationService:
             },
             {
                 "key": "cover_letter",
-                "label": "Cover letter approved",
+                "label": cover_letter_label,
                 "complete": "cover_letter" in approved_types,
                 "required": bool(app["cover_letter_required"]),
             },

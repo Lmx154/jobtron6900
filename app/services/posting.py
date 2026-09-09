@@ -109,6 +109,50 @@ def is_fetchable(url: str) -> tuple[bool, str]:
     return True, ""
 
 
+# Phase 6 (D8): guess cover_letter_required from nearby language, once, and
+# never touch it again once a human or a prior guess has spoken (that part is
+# the caller's job -- this function only reads).
+COVER_LETTER_WINDOW = 80
+_COVER_LETTER_PHRASE_RE = re.compile(r"cover(?:ing)?[\s-]+letter", re.IGNORECASE)
+_COVER_LETTER_REQUIRED_RE = re.compile(
+    r"\b(?:required|must|include|attach|submit|upload)\b", re.IGNORECASE
+)
+_COVER_LETTER_OPTIONAL_RE = re.compile(
+    r"\b(?:optional|not\s+required|no\s+cover\s+letter)\b", re.IGNORECASE
+)
+
+
+def infer_cover_letter_required(text: str) -> bool | None:
+    """Guess whether a posting asks for a cover letter, from nearby language.
+
+    Pure and read-only -- it decides nothing about when to apply the result;
+    that is `ApplicationService._infer_cover_letter`'s job. Returns True when
+    "cover letter" (or "cover-letter"/"covering letter") occurs within 80
+    characters of a requiring word (required/must/include/attach/submit/
+    upload); False when it occurs only near an optional cue (optional/not
+    required/no cover letter); None when the phrase never appears, or appears
+    without any of these cues nearby -- both cases mean "don't know," and a
+    caller must leave an existing flag alone rather than treat None as a no.
+    """
+    if not text:
+        return None
+    found_required = False
+    found_optional = False
+    for match in _COVER_LETTER_PHRASE_RE.finditer(text):
+        window_start = max(0, match.start() - COVER_LETTER_WINDOW)
+        window_end = min(len(text), match.end() + COVER_LETTER_WINDOW)
+        window = text[window_start:window_end]
+        if _COVER_LETTER_OPTIONAL_RE.search(window):
+            found_optional = True
+        if _COVER_LETTER_REQUIRED_RE.search(window):
+            found_required = True
+    if found_optional:
+        return False
+    if found_required:
+        return True
+    return None
+
+
 def detect_questions(text: str, labels: list[str]) -> list[str]:
     """Deterministic candidates only. The model confirms; it does not detect."""
     found: list[str] = []

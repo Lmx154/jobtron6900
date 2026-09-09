@@ -157,12 +157,25 @@ def _migration_5_event_kind(connection: sqlite3.Connection) -> None:
     connection.execute("UPDATE events SET kind='lifecycle' WHERE dedupe_key<>''")
 
 
+def _migration_6_cover_letter_source(connection: sqlite3.Connection) -> None:
+    """Track whether `cover_letter_required` was guessed or set by the user (D8).
+
+    Empty means "never decided": existing rows get the empty default, so the
+    next job_description write is free to infer once rather than being read
+    as already settled.
+    """
+    connection.execute(
+        "ALTER TABLE applications ADD COLUMN cover_letter_required_source TEXT NOT NULL DEFAULT ''"
+    )
+
+
 # (target_version, migration) applied in order to any database below target.
 MIGRATIONS: list[tuple[int, Any]] = [
     (2, _migration_2_calendar),
     (3, _migration_3_question_extraction),
     (4, _migration_4_tags),
     (5, _migration_5_event_kind),
+    (6, _migration_6_cover_letter_source),
 ]
 
 
