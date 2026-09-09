@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -572,27 +573,36 @@ class EventService:
         all_day: bool | None = None,
         dedupe_key: str = "",
         kind: str = "manual",
+        connection: Any = None,
     ):
+        """Insert one event row.
+
+        `connection`, when given, is an open write transaction the caller owns
+        (see `ApplicationService.log_update`): the insert runs on it and the
+        caller commits, so this returns the bare new id instead of a decorated
+        row -- a fresh read on a second connection would not yet see it.
+        """
         if kind not in EVENT_KINDS:
             raise ValueError(f"Unsupported event kind: {kind!r}")
         moment, detected_all_day = parse_stored(occurred_at)
         if moment is None:
             raise ValueError(f"Unrecognised event time: {occurred_at!r}")
-        event_id = self.db.execute(
-            """INSERT INTO events(
+        sql = """INSERT INTO events(
                    application_id,event_type,occurred_at,notes,
                    starts_at_utc,all_day,timezone,dedupe_key,updated_at,kind
-               ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (
-                application_id, event_type, occurred_at, notes,
-                moment.isoformat(timespec="seconds"),
-                int(detected_all_day if all_day is None else all_day),
-                str(local_timezone()),
-                dedupe_key,
-                datetime.now(UTC).isoformat(timespec="seconds"),
-                kind,
-            ),
+               ) VALUES(?,?,?,?,?,?,?,?,?,?)"""
+        params = (
+            application_id, event_type, occurred_at, notes,
+            moment.isoformat(timespec="seconds"),
+            int(detected_all_day if all_day is None else all_day),
+            str(local_timezone()),
+            dedupe_key,
+            datetime.now(UTC).isoformat(timespec="seconds"),
+            kind,
         )
+        if connection is not None:
+            return int(connection.execute(sql, params).lastrowid or 0)
+        event_id = self.db.execute(sql, params)
         return self.get(event_id)
 
     def record_auto(
@@ -603,8 +613,23 @@ class EventService:
         notes: str = "",
         key: str = "",
         all_day: bool = True,
+        connection: Any = None,
     ):
-        """Insert or refresh a lifecycle event. Safe to replay; never duplicates."""
+        """Insert or refresh a lifecycle event. Safe to replay; never duplicates.
+
+        `connection`, when given, participates in the caller's open transaction
+        (see `add`); the bare id is returned rather than a decorated row.
+        """
+        if connection is not None:
+            if key:
+                existing = connection.execute("SELECT id FROM events WHERE dedupe_key=?", (key,)).fetchone()
+                if existing:
+                    connection.execute(
+                        "UPDATE events SET event_type=?,occurred_at=?,notes=?,updated_at=? WHERE id=?",
+                        (event_type, occurred_at, notes, datetime.now(UTC).isoformat(timespec="seconds"), existing["id"]),
+                    )
+                    return int(existing["id"])
+            return self.add(application_id, event_type, occurred_at, notes, all_day=all_day, dedupe_key=key, kind="lifecycle", connection=connection)
         if key:
             existing = self.db.one("SELECT id FROM events WHERE dedupe_key=?", (key,))
             if existing:
@@ -870,6 +895,80 @@ class ApplicationService:
         with self.db.connect() as con:
             con.execute("UPDATE applications SET tags=? WHERE id=?", (updated, application_id))
         return self.get(application_id)
+
+    def log_update(
+        self,
+        application_id: int,
+        event_type: str,
+        occurred_at: str,
+        notes: str = "",
+        status: str | None = None,
+        add_tags: "Sequence[str]" = (),
+        contact: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Record a pasted email or status update as one atomic write (D5).
+
+        Writes a manual event, then -- if `status` differs from the current
+        value -- the same lifecycle-event path `update()` uses (so the P2
+        reminder-resolution logic sees it), then merges `add_tags`, then
+        upserts `contact` by email. Everything runs on one connection: any
+        failure rolls back the whole call, so no partial event is ever left
+        behind. Never sets Applied -- that guard raises here with the exact
+        wording the MCP layer already uses for `set_status`.
+        """
+        assert self.services
+        old = self.get(application_id)
+        if status is not None:
+            if status not in self.STATUSES:
+                raise ValueError(f"Unsupported application status: {status}")
+            if status == "Applied":
+                raise ValueError("Applied means the user submitted this externally. Ask them first.")
+
+        assumed_now = not occurred_at.strip()
+        if assumed_now:
+            occurred_at = datetime.now().astimezone().isoformat(timespec="minutes")
+
+        status_changed = status is not None and status != old["status"]
+        added = {t.strip().lower() for t in add_tags if t and t.strip()}
+
+        with self.db.connect() as con:
+            event_id = self.services.events.add(
+                application_id, event_type, occurred_at, notes, kind="manual", connection=con,
+            )
+            if status_changed:
+                con.execute("UPDATE applications SET status=? WHERE id=?", (status, application_id))
+                self.services.events.record_auto(
+                    application_id,
+                    f"Status: {old['status']} → {status}",
+                    today_local().isoformat(),
+                    f"Moved from {old['status']} to {status}.",
+                    key=f"{application_id}:status:{status}:{today_local().isoformat()}",
+                    connection=con,
+                )
+            if added:
+                current = {t for t in old["tags"].split(",") if t}
+                con.execute(
+                    "UPDATE applications SET tags=? WHERE id=?",
+                    (normalize_tags(",".join(sorted(current | added))), application_id),
+                )
+            if contact:
+                self.upsert_contact(
+                    application_id,
+                    str(contact.get("name", "")),
+                    str(contact.get("role", "")),
+                    str(contact.get("email", "")),
+                    str(contact.get("phone", "")),
+                    str(contact.get("notes", "")),
+                    connection=con,
+                )
+
+        event = self.services.events.get(event_id)
+        event["assumed_now"] = assumed_now
+        return {
+            "application": self.get(application_id),
+            "event": event,
+            "status_changed": status_changed,
+        }
 
     def record_question_extraction(self, application_id: int, status: str, note: str = ""):
         """Remember that the posting was scraped, and how it went."""
@@ -1304,6 +1403,61 @@ class ApplicationService:
             (application_id, name, role, email, phone, notes),
         )
         return required(self.db.one("SELECT * FROM contacts WHERE id=?", (contact_id,)), "contact")
+
+    def upsert_contact(
+        self,
+        application_id: int,
+        name: str,
+        role: str = "",
+        email: str = "",
+        phone: str = "",
+        notes: str = "",
+        connection: Any = None,
+    ):
+        """Insert a contact, or update one already on this application with the
+        same email (D5). Matching is by (application_id, lower(email)); an
+        empty email never matches, so two hand-entered contacts without an
+        email address are never merged into one.
+
+        `connection`, when given, participates in the caller's open transaction
+        (see `log_update`); the bare id is returned rather than a full row.
+        """
+        email = (email or "").strip()
+        if connection is not None:
+            existing = (
+                connection.execute(
+                    "SELECT id FROM contacts WHERE application_id=? AND lower(email)=lower(?)",
+                    (application_id, email),
+                ).fetchone()
+                if email
+                else None
+            )
+            if existing:
+                connection.execute(
+                    "UPDATE contacts SET name=?,role=?,phone=?,notes=? WHERE id=?",
+                    (name, role, phone, notes, existing["id"]),
+                )
+                return int(existing["id"])
+            cursor = connection.execute(
+                "INSERT INTO contacts(application_id,name,role,email,phone,notes) VALUES(?,?,?,?,?,?)",
+                (application_id, name, role, email, phone, notes),
+            )
+            return int(cursor.lastrowid or 0)
+        existing = (
+            self.db.one(
+                "SELECT id FROM contacts WHERE application_id=? AND lower(email)=lower(?)",
+                (application_id, email),
+            )
+            if email
+            else None
+        )
+        if existing:
+            self.db.execute(
+                "UPDATE contacts SET name=?,role=?,phone=?,notes=? WHERE id=?",
+                (name, role, phone, notes, existing["id"]),
+            )
+            return required(self.db.one("SELECT * FROM contacts WHERE id=?", (existing["id"],)), "contact")
+        return self.add_contact(application_id, name, role, email, phone, notes)
 
     def last_activity_at(self, application_id: int, now: datetime | None = None) -> str:
         """Last touch on this application, computed fresh on every read (D2).

@@ -66,7 +66,7 @@ ONE RULE - repeat this loop:
 3. Do what "you_must" says. If "then_call" names a tool, call it, then go to 1.
 4. If "then_call" is null, stop and wait for the user.
 
-Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup. "What should I do today?" -> applications.attention, then ui.show_dashboard.
+Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup. "What should I do today?" -> applications.attention, then ui.show_dashboard. A pasted email or update about a job -> applications.list(query=<company>), propose ONE sentence naming the event, date, status change (if any) and tags (if any); on "yes" call applications.log_update once. If more than one application matches, ask which; never guess.
 
 Never call another Jobtron tool unless "you_must" or "then_call" names it.
 Never state a fact about the user that is not already stored in Jobtron; ask instead.
@@ -301,6 +301,35 @@ Never mark an application Applied until the user says they submitted it themselv
                 "application":services.applications.get(application_id),
             }
         return services.applications.set_status(application_id,status)
+
+    @mcp.tool(name="applications.log_update")
+    def applications_log_update(application_id:int,event_type:str,occurred_at:str,notes:str="",status:str|None=None,add_tags:list[str]|None=None,contact:dict[str,Any]|None=None) -> dict:
+        """Record a pasted email or a status update as one atomic write: event, status, tags, contact.
+
+        CALL WHEN: the user pastes a recruiter email or reports an update, and confirms your
+        one-sentence summary of it.
+        DO NOT CALL WHEN: the user is confirming they personally submitted the application; this
+        tool always refuses status="Applied" -- call applications.set_status with
+        user_confirmed_submission=true after that confirmation instead.
+        occurred_at: display-local or ISO, same as events.add. If the email has no date, pass
+        occurred_at="" -- today is assumed and event.assumed_now is true -- and tell the user so.
+        contact: optional {name, role, email, phone}; a contact with the same email already on
+        this application is updated, not duplicated.
+        RETURNS: application, event, status_changed; or refused=true with say_to_user when
+        status="Applied" or the status is unknown (nothing is written in that case).
+        """
+        try:
+            return services.applications.log_update(application_id,event_type,occurred_at,notes,status,add_tags or (),contact)
+        except ValueError as exc:
+            return {
+                "refused":True,
+                "reason":str(exc),
+                "say_to_user":(
+                    "Have you submitted this application yourself? I will only mark it Applied once you confirm."
+                    if status=="Applied" else f"I could not log that: {exc}"
+                ),
+                "application":services.applications.get(application_id),
+            }
 
     @mcp.tool(name="questions.extract_from_posting",structured_output=True)
     def questions_extract_from_posting(application_id:int) -> dict[str,Any]:
