@@ -20,6 +20,10 @@ Local-first job-application workspace: FastAPI web frontend + one MCP server, SQ
 - Documents, answers, and submitted snapshots are versioned, never overwritten; one approved version per scope.
 - Routes and MCP handlers are thin adapters over `app/services/core.py`; MCP tool names are domain-prefixed (`applications_*`, `questions_*`, …).
 - Posting fetch is server-side `httpx` with an SSRF guard; no headless browser in the server. Failure degrades honestly to agent-browser or paste.
+- Question-bank auto-apply (`_auto_apply_bank_answers`) fires only for an already-approved entry at coverage == 1.0; drafts stay unapproved until the single `review_drafts` stop. An application with `applied_at` set is never asked for questions or drafts again.
+- `events.kind` is manual | lifecycle | reminder; only lifecycle is hidden from Upcoming. Attention buckets are derived from existing rows and never stored.
+- `capture_page_text` is the one step whose wait depends on the client (agent browser vs. paste); the fallback lives in its `you_must`. Do not add another such step without recording why.
+- `cover_letter_required_source` guards inference: it runs only while the source is empty; a user value is never overridden.
 
 ## Conventions
 

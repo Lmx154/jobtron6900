@@ -357,6 +357,14 @@ _APPLICATIONS_UI_TEMPLATE = r"""
             <button class="button secondary" data-follow-up="I finished my Jobtron setup. Check candidate.readiness again and continue.">I'm done — check again</button>
           </div>
           <p class="notice">Upload happens in the browser; the agent cannot receive files directly. Once the page shows your resume as active, come back and tell the agent you are done.</p>
+        </section>
+        <section class="panel">
+          <h2>Standard answers</h2>
+          <p class="lede">Optional, not blocking: answer the twelve common application questions once and Jobtron reuses them automatically on every application.</p>
+          <div class="stats"><div class="stat"><strong>${escapeHtml(readiness.standard_answers?.answered ?? 0)} / ${escapeHtml(readiness.standard_answers?.total ?? 12)}</strong><span>answered</span></div></div>
+          <div class="actions">
+            ${data.frontend_url ? `<a class="button secondary" href="${escapeHtml(data.frontend_url)}#standard-answers" target="_blank" rel="noreferrer">Answer standard questions</a>` : ""}
+          </div>
         </section>`;
     }
 

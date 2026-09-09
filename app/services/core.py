@@ -10,6 +10,7 @@ from app.db import Database
 from app.services.extraction import extract_document_text
 from app.services.palette import status_color
 from app.services.posting import MAX_BYTES, detect_questions_from_text, infer_cover_letter_required
+from app.services.standard_questions import STANDARD_QUESTIONS
 from app.services.timeutil import local_day, local_timezone, parse_stored, to_local, today_local
 from app.storage import FileStorage
 
@@ -119,6 +120,7 @@ class CandidateService:
             f"profile.{field}" for field in missing
         ]
         gap = self.gap_phrase(missing, master_resume_available)
+        standard_answers = self._standard_answers_status()
         say_to_user = (
             f"You are set up: your profile is complete and you have a master resume on file."
             if capability == "full"
@@ -139,7 +141,23 @@ class CandidateService:
             "setup_url": setup_url,
             "say_to_user": say_to_user,
             "must_share_url": capability != "full",
+            "standard_answers": standard_answers,
         }
+
+    def _standard_answers_status(self) -> dict[str, Any]:
+        """Non-blocking: how many of the twelve standard questions (Phase 7)
+        are answered and approved. `capability` never depends on this."""
+        assert self.services
+        questions = self.services.questions
+        answered = 0
+        missing: list[str] = []
+        for entry in STANDARD_QUESTIONS:
+            row = questions.get_bank_entry_by_question(entry["canonical_question"])
+            if row and str(row["answer"] or "").strip() and row["approved"]:
+                answered += 1
+            else:
+                missing.append(entry["canonical_question"])
+        return {"answered": answered, "total": len(STANDARD_QUESTIONS), "missing": missing}
 
     @staticmethod
     def gap_phrase(missing_fields: list[str], master_resume_available: bool) -> str:
@@ -496,6 +514,30 @@ class QuestionService:
             source_label=source_label or f"question_bank:{bank_entry_id}",
             approved=approved,
         )
+
+    def get_bank_entry_by_question(self, canonical_question: str):
+        return self.db.one("SELECT * FROM question_bank WHERE canonical_question=?", (canonical_question,))
+
+    def seed_defaults(self) -> dict:
+        """Insert any of the twelve standard questions not already in the bank.
+
+        Empty answer, unapproved -- `search_bank` only returns approved rows,
+        so a seeded-but-unanswered entry never surfaces during an application.
+        Idempotent and additive only: an existing row (matched by exact
+        canonical_question text) is never touched.
+        """
+        inserted = 0
+        existing = 0
+        for entry in STANDARD_QUESTIONS:
+            if self.get_bank_entry_by_question(entry["canonical_question"]):
+                existing += 1
+                continue
+            self.db.execute(
+                "INSERT INTO question_bank(canonical_question,answer,keywords,approved) VALUES(?,?,?,?)",
+                (entry["canonical_question"], "", entry["keywords"], 0),
+            )
+            inserted += 1
+        return {"inserted": inserted, "existing": existing}
 
     def detect_from_text(
         self, application_id: int, page_text: str, source: Literal["browser", "paste"]

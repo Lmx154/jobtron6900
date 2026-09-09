@@ -66,7 +66,7 @@ ONE RULE - repeat this loop:
 3. Do what "you_must" says. If "then_call" names a tool, call it, then go to 1.
 4. If "then_call" is null, stop and wait for the user.
 
-Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup. "What should I do today?" -> applications.attention, then ui.show_dashboard. A pasted email or update about a job -> applications.list(query=<company>), propose ONE sentence naming the event, date, status change (if any) and tags (if any); on "yes" call applications.log_update once. If more than one application matches, ask which; never guess.
+Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup, then mention unanswered standard questions after profile and resume. "What should I do today?" -> applications.attention, then ui.show_dashboard. A pasted email or update about a job -> applications.list(query=<company>), propose ONE sentence naming the event, date, status change (if any) and tags (if any); on "yes" call applications.log_update once. If more than one application matches, ask which; never guess.
 
 Never call another Jobtron tool unless "you_must" or "then_call" names it.
 Never state a fact about the user that is not already stored in Jobtron; ask instead.
@@ -439,6 +439,8 @@ Never mark an application Applied until the user says they submitted it themselv
     def question_bank_save(canonical_question:str,answer:str,keywords:str="",approved:bool=True,bank_entry_id:int|None=None) -> dict: """Create or update a reusable canonical application answer."""; return services.questions.save_bank_entry(canonical_question,answer,keywords,approved,bank_entry_id)
     @mcp.tool(name="question_bank.apply")
     def question_bank_apply(question_id:int,bank_entry_id:int,approved:bool=False) -> dict: """Apply a reusable answer as a new version on an application question."""; return services.questions.apply_bank_answer(question_id,bank_entry_id,approved)
+    @mcp.tool(name="question_bank.seed_defaults")
+    def question_bank_seed_defaults() -> dict: """Insert the twelve standard ATS questions into the bank (empty answer, unapproved) if not already present. Idempotent."""; return services.questions.seed_defaults()
 
     @mcp.tool(name="documents.list")
     def documents_list(application_id:int|None=None,document_type:str|None=None) -> list[dict]: """List master or application document versions."""; return services.documents.list(application_id,document_type)

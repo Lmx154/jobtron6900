@@ -1,20 +1,42 @@
 from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, Response
 
+from app.services.standard_questions import STANDARD_QUESTIONS
+
 from .helpers import redirect, services, templates
 
 router=APIRouter(prefix="/profile")
 
 
+def _standard_answers(svc):
+    rows=[]
+    for entry in STANDARD_QUESTIONS:
+        bank_entry=svc.questions.get_bank_entry_by_question(entry["canonical_question"])
+        rows.append({"key":entry["key"],"canonical_question":entry["canonical_question"],"answer":bank_entry["answer"] if bank_entry else ""})
+    return rows
+
+
 @router.get("")
 def profile(request: Request):
     svc=services(request)
-    return templates(request).TemplateResponse(request,"profile.html",{"profile":svc.candidate.get_profile(),"facts":svc.candidate.get_facts(),"resumes":svc.documents.list(None,"master_resume"),"academic_documents":svc.documents.academic()})
+    return templates(request).TemplateResponse(request,"profile.html",{"profile":svc.candidate.get_profile(),"facts":svc.candidate.get_facts(),"resumes":svc.documents.list(None,"master_resume"),"academic_documents":svc.documents.academic(),"standard_questions":_standard_answers(svc)})
 
 
 @router.post("")
 async def update_profile(request: Request):
     form=await request.form(); services(request).candidate.update_profile(**dict(form)); return redirect("/profile")
+
+
+@router.post("/standard-answers")
+async def update_standard_answers(request: Request):
+    svc=services(request); svc.questions.seed_defaults()
+    form=await request.form()
+    for entry in STANDARD_QUESTIONS:
+        content=str(form.get(f"answer_{entry['key']}","")).strip()
+        if not content: continue
+        bank_entry=svc.questions.get_bank_entry_by_question(entry["canonical_question"])
+        svc.questions.save_bank_entry(entry["canonical_question"],content,entry["keywords"],approved=True,bank_entry_id=bank_entry["id"] if bank_entry else None)
+    return redirect("/profile#standard-answers")
 
 
 @router.post("/facts")
