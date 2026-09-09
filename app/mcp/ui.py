@@ -49,6 +49,8 @@ _APPLICATIONS_UI_TEMPLATE = r"""
     .title { font-weight: 760; }
     .meta { display: flex; flex-wrap: wrap; gap: 7px 12px; color: var(--muted); font-size: 12px; margin-top: 5px; }
     .pill { display: inline-flex; align-items: center; width: max-content; padding: 5px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 11px; font-weight: 750; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tag { display: inline-flex; align-items: center; width: max-content; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 10px; font-weight: 700; }
     .button { border: 0; border-radius: 9px; padding: 10px 13px; background: var(--green); color: var(--canvas); cursor: pointer; font-weight: 750; }
     .button.secondary { background: var(--green-soft); color: var(--green); }
     .button.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
@@ -132,6 +134,12 @@ _APPLICATIONS_UI_TEMPLATE = r"""
       return result?.structuredContent ?? result?.structured_content ?? result;
     }
 
+    function tagChips(tags) {
+      const list = String(tags ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
+      if (!list.length) return "";
+      return `<div class="tags">${list.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>`;
+    }
+
     function groupedSourceOptions(options) {
       let group = "";
       return (options.sources ?? []).map((source) => {
@@ -207,6 +215,7 @@ _APPLICATIONS_UI_TEMPLATE = r"""
                   ${item.location ? `<span>${escapeHtml(item.location)}</span>` : ""}
                   <span class="pill">${escapeHtml(item.status)}</span>
                 </div>
+                ${tagChips(item.tags)}
               </div>
               <button class="button secondary" data-review-id="${escapeHtml(item.id)}">Review with agent</button>
             </article>`).join("")
@@ -245,6 +254,7 @@ _APPLICATIONS_UI_TEMPLATE = r"""
           <div class="hero">
             <div>
               <span class="pill">${escapeHtml(item.status ?? "Draft")}</span>
+              ${tagChips(item.tags)}
               <p class="lede">${escapeHtml(data.review_summary ?? "Jobtron assembled the current authoritative state for your confirmation.")}</p>
             </div>
             <div class="progress-number">${escapeHtml(percent)}%<span>package ready</span></div>

@@ -234,7 +234,9 @@ Never mark an application Applied until the user says they submitted it themselv
     def candidate_update_fact(fact_id:int,category:str,title:str,description:str,tags:str="",source:str="",verified:bool=False) -> dict: """Replace the editable fields of a candidate fact."""; return services.candidate.update_fact(fact_id,category=category,title=title,description=description,tags=tags,source=source,verified=verified)
 
     @mcp.tool(name="applications.list")
-    def applications_list(status:str|None=None) -> list[dict]: """List applications, optionally filtered by status."""; return services.applications.list(status)
+    def applications_list(status:str|None=None,tag:str|None=None,query:str|None=None) -> list[dict]: """List applications, optionally filtered by status, by one whole tag (tags are lowercase words), and/or a free-text query matched against company, title, location, and tags."""; return services.applications.list(status,tag,query)
+    @mcp.tool(name="applications.tag")
+    def applications_tag(application_id:int,add:list[str]|None=None,remove:list[str]|None=None) -> dict: """Add and/or remove tags on an application. Tags are lowercase words; each entry here becomes one tag. Removing a tag that is not present is a no-op."""; return services.applications.tag(application_id,add=add or (),remove=remove or ())
     @mcp.tool(name="applications.get")
     def applications_get(application_id:int) -> dict: """Return one application record."""; return services.applications.get(application_id)
     @mcp.tool(name="applications.get_context")
@@ -250,15 +252,16 @@ Never mark an application Applied until the user says they submitted it themselv
     @mcp.tool(name="applications.set_requirements")
     def applications_set_requirements(application_id:int,cover_letter_required:bool=False) -> dict: """Set application-specific material requirements and return refreshed progress."""; services.applications.update(application_id,cover_letter_required=cover_letter_required); return services.applications.progress(application_id)
     @mcp.tool(name="applications.create")
-    def applications_create(company_name:str,formal_title:str,url:str="",location:str="",job_description:str="",normalized_role:str="",role_family:str="",notes:str="") -> dict: """Create an application."""; return services.applications.create(company_name,formal_title,url=url,location=location,job_description=job_description,normalized_role=normalized_role,role_family=role_family,notes=notes)
+    def applications_create(company_name:str,formal_title:str,url:str="",location:str="",job_description:str="",normalized_role:str="",role_family:str="",notes:str="",allow_duplicate:bool=False) -> dict: """Create an application. If a saved application already has this exact url, returns that record with duplicate=True instead of creating a second one; pass allow_duplicate=true to create anyway."""; return services.applications.create(company_name,formal_title,allow_duplicate=allow_duplicate,url=url,location=location,job_description=job_description,normalized_role=normalized_role,role_family=role_family,notes=notes)
     @mcp.tool(name="applications.update")
-    def applications_update(application_id:int,company_name:str,formal_title:str,normalized_role:str="",role_family:str="",url:str="",location:str="",job_description:str="",status:str="Draft",notes:str="",user_confirmed_submission:bool=False) -> dict:
+    def applications_update(application_id:int,company_name:str,formal_title:str,normalized_role:str="",role_family:str="",url:str="",location:str="",job_description:str="",status:str="Draft",notes:str="",user_confirmed_submission:bool=False,tags:str|None=None) -> dict:
         """Update an application. Preserve every field you are not deliberately changing.
 
         CALL WHEN: workflow.next told you to record posting details or a user-confirmed change.
         DO NOT CALL WHEN: you only want to change status; use applications.set_status.
         RETURNS: the updated application. Setting status='Applied' requires
-        user_confirmed_submission=true and is refused otherwise.
+        user_confirmed_submission=true and is refused otherwise. tags is a comma-separated list
+        of lowercase words (e.g. "referral,remote"); omit it to leave tags unchanged.
         """
         if status=="Applied" and not user_confirmed_submission:
             return {
@@ -267,7 +270,9 @@ Never mark an application Applied until the user says they submitted it themselv
                 "say_to_user":"Have you submitted this application yourself? I will only mark it Applied once you confirm.",
                 "application":services.applications.get(application_id),
             }
-        return services.applications.update(application_id,company_name=company_name,formal_title=formal_title,normalized_role=normalized_role,role_family=role_family,url=url,location=location,job_description=job_description,status=status,notes=notes)
+        fields:dict[str,Any]=dict(company_name=company_name,formal_title=formal_title,normalized_role=normalized_role,role_family=role_family,url=url,location=location,job_description=job_description,status=status,notes=notes)
+        if tags is not None: fields["tags"]=tags
+        return services.applications.update(application_id,**fields)
 
     @mcp.tool(name="applications.set_status")
     def applications_set_status(application_id:int,status:str,user_confirmed_submission:bool=False) -> dict:

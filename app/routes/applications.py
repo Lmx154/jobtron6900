@@ -13,9 +13,15 @@ def as_int(value):
 
 
 @router.get("")
-def application_list(request: Request, status: str|None=None):
+def application_list(request: Request, status: str|None=None, tag: str|None=None, q: str|None=None):
     svc=services(request)
-    return templates(request).TemplateResponse(request,"applications/list.html",{"applications":svc.applications.list(status),"statuses":svc.applications.STATUSES,"selected_status":status})
+    applications=svc.applications.list(status,tag,q)
+    tag_counts:dict[str,int]={}
+    for application in svc.applications.list():
+        for t in (application["tags"] or "").split(","):
+            if t: tag_counts[t]=tag_counts.get(t,0)+1
+    tags=sorted(tag_counts,key=lambda t:(-tag_counts[t],t))
+    return templates(request).TemplateResponse(request,"applications/list.html",{"applications":applications,"statuses":svc.applications.STATUSES,"selected_status":status,"selected_tag":tag,"query":q or "","tags":tags,"tag_counts":tag_counts})
 
 
 @router.post("")

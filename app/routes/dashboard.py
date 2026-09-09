@@ -31,7 +31,7 @@ def _shift_month(year: int, month: int, delta: int) -> str:
 
 
 @router.get("/")
-def dashboard(request: Request, month: str | None = None, status: str | None = None):
+def dashboard(request: Request, month: str | None = None, status: str | None = None, tag: str | None = None, q: str | None = None):
     svc=services(request); today=today_local()
     year, mon = _parse_month(month, today)
     if status not in svc.applications.STATUSES: status = None
@@ -58,8 +58,15 @@ def dashboard(request: Request, month: str | None = None, status: str | None = N
             cursor += timedelta(days=1)
         weeks.append(week)
 
-    applications = svc.applications.list()
-    counts = {s: sum(a["status"] == s for a in applications) for s in svc.applications.STATUSES}
+    all_applications = svc.applications.list()
+    counts = {s: sum(a["status"] == s for a in all_applications) for s in svc.applications.STATUSES}
+    tag_counts: dict[str, int] = {}
+    for application in all_applications:
+        for t in (application["tags"] or "").split(","):
+            if t: tag_counts[t] = tag_counts.get(t, 0) + 1
+    tags = sorted(tag_counts, key=lambda t: (-tag_counts[t], t))
+
+    applications = svc.applications.list(tag=tag, query=q)
 
     return templates(request).TemplateResponse(request, "dashboard.html", {
         "weeks": weeks,
@@ -73,6 +80,10 @@ def dashboard(request: Request, month: str | None = None, status: str | None = N
         "statuses": svc.applications.STATUSES,
         "status_colors": STATUS_COLORS,
         "selected_status": status,
+        "selected_tag": tag,
+        "query": q or "",
+        "tags": tags,
+        "tag_counts": tag_counts,
         "applications": applications[:8],
         "counts": counts,
     })

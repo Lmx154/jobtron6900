@@ -134,10 +134,21 @@ def _migration_3_question_extraction(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_4_tags(connection: sqlite3.Connection) -> None:
+    """Give applications a free-text tag set for filtering and search.
+
+    Stored as a single sorted, lowercase, comma-joined column (see
+    `app.services.core.normalize_tags`): single-user SQLite has no use for a
+    join table here, and a text column costs nothing extra to migrate.
+    """
+    connection.execute("ALTER TABLE applications ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+
+
 # (target_version, migration) applied in order to any database below target.
 MIGRATIONS: list[tuple[int, Any]] = [
     (2, _migration_2_calendar),
     (3, _migration_3_question_extraction),
+    (4, _migration_4_tags),
 ]
 
 

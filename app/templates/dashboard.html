@@ -6,6 +6,10 @@
 
 <div class="filters status-chips"><a href="/?month={{ current_month }}" class="{% if not selected_status %}active{% endif %}">All</a>{% for s in statuses %}<a href="/?month={{ current_month }}&amp;status={{ s|urlencode }}" class="{% if selected_status==s %}active{% endif %}" style="--chip:{{ status_colors[s] }}">{{ s }}</a>{% endfor %}</div>
 
+{% if tags %}<div class="filters tag-chips"><a href="/?month={{ current_month }}{{ status_suffix }}" class="{% if not selected_tag %}active{% endif %}">All tags</a>{% for t in tags %}<a href="/?month={{ current_month }}{{ status_suffix }}&amp;tag={{ t|urlencode }}" class="{% if selected_tag==t %}active{% endif %}">{{ t }} ({{ tag_counts[t] }})</a>{% endfor %}</div>{% endif %}
+
+<form method="get" action="/" class="search-form"><input type="hidden" name="month" value="{{ current_month }}">{% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}<input type="search" name="q" value="{{ query }}" placeholder="Search company, title, location, or tag"><button type="submit" class="secondary">Search</button></form>
+
 <div class="grid two calendar-layout">
 <section class="calendar">
   <div class="calendar-head"><h2>{{ month_label }}</h2><nav class="calendar-nav"><a href="/?month={{ prev_month }}{{ status_suffix }}" aria-label="Previous month">&larr;</a><a href="/?month={{ this_month }}{{ status_suffix }}">Today</a><a href="/?month={{ next_month }}{{ status_suffix }}" aria-label="Next month">&rarr;</a></nav></div>
@@ -26,5 +30,5 @@
 </div>
 
 <section class="stats">{% for status,count in counts.items() %}{% if count %}<a href="/applications?status={{ status|urlencode }}"><strong>{{ count }}</strong><span>{{ status }}</span></a>{% endif %}{% endfor %}</section>
-<section><h2>Recent applications</h2>{% for app in applications %}<a class="item" href="/applications/{{ app.id }}"><div><strong>{{ app.formal_title }}</strong><small>{{ app.company_name }}</small></div><span class="pill">{{ app.status }}</span></a>{% else %}<p class="empty">Create your first application to begin.</p>{% endfor %}</section>
+<section><h2>Recent applications</h2>{% for app in applications %}<a class="item" href="/applications/{{ app.id }}"><div><strong>{{ app.formal_title }}</strong><small>{{ app.company_name }}</small>{% if app.tags %}<div class="tags">{% for t in app.tags.split(',') %}<span class="tag">{{ t }}</span>{% endfor %}</div>{% endif %}</div><span class="pill">{{ app.status }}</span></a>{% else %}<p class="empty">Create your first application to begin.</p>{% endfor %}</section>
 {% endblock %}

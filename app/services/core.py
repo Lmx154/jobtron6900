@@ -32,6 +32,22 @@ def required(row: dict[str, Any] | None, kind: str) -> dict[str, Any]:
     return row
 
 
+def normalize_tags(raw: str | list[str] | None) -> str:
+    """Canonical tag storage form: split on comma, strip, lowercase, drop
+    empties, dedupe, sort, join with ','. Both `update()` and `tag()` route
+    every write through this so the column is always in the same shape."""
+    if raw is None:
+        return ""
+    text = raw if isinstance(raw, str) else ",".join(raw)
+    tags = {part.strip().lower() for part in text.split(",") if part.strip()}
+    return ",".join(sorted(tags))
+
+
+def _escape_like(value: str) -> str:
+    """Escape SQLite LIKE wildcards so free-text tags/search never behave as patterns."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class CandidateService:
     def __init__(self, db: Database):
         self.db = db
@@ -611,13 +627,27 @@ class ApplicationService:
         self.db = db
         self.services: Services | None = None
 
-    def list(self, status: str | None = None):
+    def list(self, status: str | None = None, tag: str | None = None, query: str | None = None):
         sql = "SELECT a.*,c.name company_name FROM applications a JOIN companies c ON c.id=a.company_id"
-        args = ()
+        clauses: list[str] = []
+        args: list[Any] = []
         if status:
-            sql += " WHERE a.status=?"
-            args = (status,)
-        return self.db.all(sql + " ORDER BY COALESCE(a.applied_at,a.created_at) DESC,a.id DESC", args)
+            clauses.append("a.status=?")
+            args.append(status)
+        if tag:
+            # Whole-tag match: ',' || tags || ',' LIKE '%,x,%' so "remote" never matches "remote-ok".
+            clauses.append("(',' || a.tags || ',') LIKE ('%,' || ? || ',%') ESCAPE '\\'")
+            args.append(_escape_like(tag.strip().lower()))
+        if query:
+            like = f"%{_escape_like(query.strip())}%"
+            clauses.append(
+                "(c.name LIKE ? ESCAPE '\\' OR a.formal_title LIKE ? ESCAPE '\\' "
+                "OR a.location LIKE ? ESCAPE '\\' OR a.tags LIKE ? ESCAPE '\\')"
+            )
+            args.extend([like, like, like, like])
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        return self.db.all(sql + " ORDER BY COALESCE(a.applied_at,a.created_at) DESC,a.id DESC", tuple(args))
 
     def get(self, application_id: int):
         return required(
@@ -629,7 +659,7 @@ class ApplicationService:
             "application",
         )
 
-    def create(self, company_name: str, formal_title: str, **fields):
+    def create(self, company_name: str, formal_title: str, allow_duplicate: bool = False, **fields):
         company_name = company_name.strip()
         formal_title = formal_title.strip()
         status = fields.get("status", "Draft")
@@ -637,6 +667,11 @@ class ApplicationService:
             raise ValueError("Company and formal title are required")
         if status not in self.STATUSES:
             raise ValueError(f"Unsupported application status: {status}")
+        url = str(fields.get("url", "") or "")
+        if url.strip() and not allow_duplicate:
+            existing = self.find_by_url(url)
+            if existing is not None:
+                return {**existing, "duplicate": True}
         with self.db.connect() as con:
             con.execute("INSERT OR IGNORE INTO companies(name) VALUES(?)", (company_name,))
             company_id = con.execute(
@@ -653,7 +688,7 @@ class ApplicationService:
                     formal_title,
                     fields.get("normalized_role", ""),
                     fields.get("role_family", ""),
-                    fields.get("url", ""),
+                    url,
                     fields.get("location", ""),
                     fields.get("job_description", ""),
                     status,
@@ -669,7 +704,18 @@ class ApplicationService:
             f"Draft created for {formal_title} at {company_name}.",
             key=f"{application_id}:drafted",
         )
-        return self.get(application_id)
+        return {**self.get(application_id), "duplicate": False}
+
+    def find_by_url(self, url: str) -> dict[str, Any] | None:
+        """An existing application for this posting, so a re-paste never duplicates."""
+        target = url.strip().rstrip("/")
+        if not target:
+            return None
+        return self.db.one(
+            """SELECT a.*,c.name company_name FROM applications a JOIN companies c ON c.id=a.company_id
+               WHERE rtrim(trim(a.url),'/')=? ORDER BY a.id LIMIT 1""",
+            (target,),
+        )
 
     def _record_lifecycle_event(self, application_id: int, event_type: str, notes: str, key: str, when: str = ""):
         """Automatic calendar entry. Never raises: a calendar problem must not
@@ -708,12 +754,16 @@ class ApplicationService:
                 "notes",
                 "questions_reviewed",
                 "cover_letter_required",
+                "tags",
             ]
-            values = [
-                int(bool(fields.get(key, old[key]))) if key in {"questions_reviewed", "cover_letter_required"}
-                else fields.get(key, old[key])
-                for key in allowed
-            ]
+            values = []
+            for key in allowed:
+                if key in {"questions_reviewed", "cover_letter_required"}:
+                    values.append(int(bool(fields.get(key, old[key]))))
+                elif key == "tags":
+                    values.append(normalize_tags(fields["tags"]) if "tags" in fields else old["tags"])
+                else:
+                    values.append(fields.get(key, old[key]))
             status = fields.get("status", old["status"])
             applied = old["applied_at"]
             if status not in self.STATUSES:
@@ -752,6 +802,21 @@ class ApplicationService:
         if status not in self.STATUSES:
             raise ValueError(f"Unsupported application status: {status}")
         return self.update(application_id, status=status)
+
+    def tag(self, application_id: int, add: "list[str] | tuple[str, ...]" = (), remove: "list[str] | tuple[str, ...]" = ()) -> dict[str, Any]:
+        """Add and/or remove tags in one call, touching nothing else on the row.
+
+        Removing a tag that is not present is a no-op, not an error: the agent
+        should never have to check membership before asking for a change.
+        """
+        old = self.get(application_id)
+        current = {t for t in old["tags"].split(",") if t}
+        added = {t.strip().lower() for t in add if t and t.strip()}
+        removed = {t.strip().lower() for t in remove if t and t.strip()}
+        updated = normalize_tags(",".join(sorted((current | added) - removed)))
+        with self.db.connect() as con:
+            con.execute("UPDATE applications SET tags=? WHERE id=?", (updated, application_id))
+        return self.get(application_id)
 
     def record_question_extraction(self, application_id: int, status: str, note: str = ""):
         """Remember that the posting was scraped, and how it went."""

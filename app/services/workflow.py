@@ -186,11 +186,10 @@ def next_step(services: Any, application_id: int | None = None, url: str = "") -
 
 
 def find_by_url(services: Any, url: str) -> dict[str, Any] | None:
-    """An existing application for this posting, so a re-paste never duplicates."""
-    target = url.strip().rstrip("/")
-    if not target:
-        return None
-    for application in services.applications.list():
-        if (application["url"] or "").strip().rstrip("/") == target:
-            return application
-    return None
+    """An existing application for this posting, so a re-paste never duplicates.
+
+    The lookup itself lives on `ApplicationService.find_by_url` (reused by
+    `ApplicationService.create` for its own duplicate check); this stays as a
+    thin wrapper so the workflow engine keeps its existing call shape.
+    """
+    return services.applications.find_by_url(url)
