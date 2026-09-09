@@ -132,8 +132,8 @@ footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);font-fa
   <div class="meta">
     <div>repo<b>jobtron6900</b></div>
     <div>branch<b>workflow-rebuild</b></div>
-    <div>baseline<b>74 tests passing, 0 committed</b></div>
-    <div>phases<b>8, first one is a commit</b></div>
+    <div>baseline<b>74 tests → 156, all committed</b></div>
+    <div>phases<b>8 of 8 built</b></div>
     <div>schema<b>migrations 4 · 5 · 6</b></div>
   </div>
 </header>
@@ -158,6 +158,24 @@ footer{margin-top:60px;padding-top:18px;border-top:1px solid var(--line);font-fa
   <div class="sec-n">00</div>
   <h2>Where it stands</h2>
   <p>Three analysts surveyed the working tree; a runner confirmed the suite. The core is sound. What follows is polish on a machine that already works.</p>
+  <div class="block">
+    <h4>Build status</h4>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>Phase</th><th>State</th><th>Commit</th><th>Tests</th></tr></thead>
+      <tbody>
+        <tr><td>P0 Ship what exists</td><td><span class="pill pine">done</span> <span class="pill amber">evidence run pending</span></td><td class="num">9e39739</td><td class="num">74</td></tr>
+        <tr><td>P1 Tags, search, URL dedupe</td><td><span class="pill pine">done</span></td><td class="num">8368ef7</td><td class="num">88</td></tr>
+        <tr><td>P2 Attention rail, event kinds, reminders</td><td><span class="pill pine">done</span></td><td class="num">3fa0583</td><td class="num">102</td></tr>
+        <tr><td>P3 Log an update</td><td><span class="pill pine">done</span></td><td class="num">e6fbab3</td><td class="num">110</td></tr>
+        <tr><td>P4 Fewer approvals</td><td><span class="pill pine">done</span></td><td class="num">3a3162b</td><td class="num">121</td></tr>
+        <tr><td>P5 Page capture via agent browser</td><td><span class="pill pine">done</span></td><td class="num">7958f80</td><td class="num">132</td></tr>
+        <tr><td>P6 Inferred cover-letter flag</td><td><span class="pill pine">done</span></td><td class="num">e8dcf90</td><td class="num">148</td></tr>
+        <tr><td>P7 Standard answers</td><td><span class="pill pine">done</span></td><td class="num">0fd5cee</td><td class="num">156</td></tr>
+      </tbody>
+    </table></div>
+    <p>Found during the build, not in the plan: an application already marked Applied with an unapproved draft used to sit on <code>prepare_resume</code> forever — it now jumps to post-submission (P4). Two seed keyword sets fully covered "Are you a US citizen?" and "Do you have relevant experience?", which auto-apply would have answered without review; both were narrowed and an adversarial test now guards every seed (P7). <code>jobtron-setup doctor</code> applies migrations to the live database — all three new migrations are additive.</p>
+    <p>Still open: the P0 real-posting evidence run (needs three real URLs); the structured autofill payload and the tool-surface trim remain their own plan.</p>
+  </div>
   <div class="facts">
     <div class="fact"><div class="k">Workflow</div><div class="v">Server-owned state machine, 11 steps</div><p>One tool, one sentence, repeat. <span class="ref">workflow.py:27–100</span>, decision chain <span class="ref">core.py:845–951</span>.</p></div>
     <div class="fact"><div class="k">Tests</div><div class="v">74 / 74 pass · exit 0</div><p>Up from 18. Nothing committed on <code>workflow-rebuild</code>. Never run against a real posting.</p></div>
@@ -591,5 +609,5 @@ which; never guess.</code></pre>
   </ul>
 </section>
 
-<footer>Jobtron 6900 · polish pass · surveyed against app/services/core.py, app/services/workflow.py, app/services/posting.py, app/db.py, app/mcp/server.py, app/routes/*, app/templates/* on branch workflow-rebuild · 74 tests passing at time of writing</footer>
+<footer>Jobtron 6900 · polish pass · surveyed against app/services/core.py, app/services/workflow.py, app/services/posting.py, app/db.py, app/mcp/server.py, app/routes/*, app/templates/* on branch workflow-rebuild · 156 tests passing after the build</footer>
 </div>
