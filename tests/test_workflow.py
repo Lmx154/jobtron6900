@@ -180,3 +180,16 @@ def test_question_bank_searches_wording_variants_and_reuses_answers(services):
     reused=services.questions.apply_bank_answer(second_question["id"],matches[0]["id"],approved=True)
     assert reused["source_label"]==f"question_bank:{matches[0]['id']}"
     assert services.questions.list(second_app["id"])[0]["current_answer"]["content"]==matches[0]["answer"]
+
+
+def test_search_bank_reports_query_token_coverage(services):
+    """Coverage is the auto-apply gate, so it must mean "every query token matched"."""
+    services.questions.save_bank_entry("Are you willing to travel?","Yes, up to 25%.",approved=True)
+    services.questions.save_bank_entry("Do you require visa sponsorship?","No.",approved=False)
+
+    exact=services.questions.search_bank("Are you willing to travel?",limit=1)[0]
+    assert exact["coverage"]==1.0
+    partial=services.questions.search_bank("Are you willing to relocate?",limit=1)[0]
+    assert partial["coverage"]==pytest.approx(0.8)
+    sponsorship=services.questions.search_bank("Do you require visa sponsorship?")
+    assert all(hit["canonical_question"]!="Do you require visa sponsorship?" for hit in sponsorship), "unapproved entries never surface"

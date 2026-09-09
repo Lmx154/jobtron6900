@@ -55,7 +55,7 @@ def test_web_notebook_workflow(settings):
 def test_mcp_surface_matches_blueprint(settings):
     app=create_app(settings)
     tools={tool.name:tool for tool in asyncio.run(app.state.mcp.list_tools())}
-    assert {"candidate.get_context","applications.list","applications.get_context","applications.progress","applications.set_questions_reviewed","questions.add","answers.save","question_bank.search","question_bank.apply","documents.save","documents.approve","documents.academic","documents.mark_considered","assets.get","events.add","ui.show_dashboard","ui.show_applications","ui.show_application"} <= tools.keys()
+    assert {"candidate.get_context","applications.list","applications.get_context","applications.progress","applications.approve_drafts","applications.set_questions_reviewed","questions.add","answers.save","question_bank.search","question_bank.apply","documents.save","documents.approve","documents.academic","documents.mark_considered","assets.get","events.add","ui.show_dashboard","ui.show_applications","ui.show_application"} <= tools.keys()
     for name in ("ui.show_applications","ui.show_application"):
         assert tools[name].meta["ui"]["resourceUri"]=="ui://jobtron/applications.html"
         assert tools[name].meta["openai/outputTemplate"]=="ui://jobtron/applications.html"
@@ -70,6 +70,35 @@ def test_mcp_surface_matches_blueprint(settings):
     assert 'request("ui/initialize"' in APPLICATIONS_UI
     assert "Open the live Jobtron dashboard" in APPLICATIONS_UI
     assert "http://localhost:9876/applications" in build_applications_ui("http://localhost:9876")
+
+
+def test_the_detail_page_marks_an_answer_reused_from_the_question_bank(settings):
+    app=create_app(settings)
+    services=app.state.services
+    application=services.applications.create("Acme","Engineer",job_description="Build things")
+    question=services.questions.add(application["id"],"Are you authorized to work?",required_field=True)
+    entry=services.questions.save_bank_entry("Are you authorized to work?","Yes.",approved=True)
+    services.questions.apply_bank_answer(question["id"],entry["id"],approved=True,source_label="question_bank:auto")
+
+    with TestClient(app) as client:
+        html=client.get(f"/applications/{application['id']}").text
+
+    assert "Reused from bank" in html
+    assert "question_bank:auto" in html
+
+
+def test_approve_drafts_over_mcp_refuses_a_draft_from_another_application(settings):
+    app=create_app(settings)
+    services=app.state.services
+    mine=services.applications.create("Acme","Engineer",job_description="Build things")
+    other=services.applications.create("Other Co","Engineer",job_description="Elsewhere")
+    theirs=services.documents.save("application_resume","Theirs",other["id"],"Resume",approved=False)
+
+    result=asyncio.run(app.state.mcp.call_tool("applications.approve_drafts",{"application_id":mine["id"],"document_ids":[theirs["id"]]}))
+
+    assert result.structured_content["refused"] is True
+    assert result.structured_content["approved_documents"]==[]
+    assert services.documents.get(theirs["id"])["approved"]==0
 
 
 def test_agent_presented_ui_returns_authoritative_review(settings):

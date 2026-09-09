@@ -22,7 +22,7 @@ from mcp.shared.message import SessionMessage
 from app.config import InstanceInUseError, InstanceLease, Settings, default_settings
 from app.db import Database
 from app.mcp.ui import APPLICATIONS_UI_URI, build_applications_ui
-from app.services import Services
+from app.services import NotFoundError, Services
 from app.services.posting import fetch_posting
 from app.services.workflow import next_step
 from app.storage import FileStorage
@@ -169,6 +169,10 @@ Never mark an application Applied until the user says they submitted it themselv
             "autofill":services.applications.autofill_options(application_id),
             "question_count":len(context["questions"]),
             "document_count":len(context["documents"]),
+            "reused_answer_count":sum(
+                bool(question["current_answer"]) and question["current_answer"]["source_label"].startswith("question_bank:")
+                for question in context["questions"]
+            ),
         }
 
     @mcp.tool(name="workflow.next",structured_output=True)
@@ -329,6 +333,29 @@ Never mark an application Applied until the user says they submitted it themselv
                     if status=="Applied" else f"I could not log that: {exc}"
                 ),
                 "application":services.applications.get(application_id),
+            }
+
+    @mcp.tool(name="applications.approve_drafts",structured_output=True)
+    def applications_approve_drafts(application_id:int,answer_ids:list[int]|None=None,document_ids:list[int]|None=None,all:bool=False) -> dict[str,Any]:
+        """Approve the drafted answers and documents the user just named.
+
+        CALL WHEN: workflow.next returned step_id "review_drafts" and the user said what to approve.
+        Pass the ids from that step's "pending" list, or all=true when the user approved everything.
+        DO NOT CALL WHEN: the user has not told you to approve anything. Nothing here is yours to approve.
+        RETURNS: approved_answers, approved_documents, the application, and whatever is still pending;
+        or refused=true when an id does not belong to this application, in which case nothing is approved.
+        """
+        try:
+            return services.applications.approve_drafts(application_id,answer_ids,document_ids,all)
+        except NotFoundError as exc:
+            return {
+                "refused":True,
+                "reason":str(exc),
+                "say_to_user":f"I could not approve that: {exc}. Nothing was approved.",
+                "approved_answers":[],
+                "approved_documents":[],
+                "application":services.applications.get(application_id),
+                "pending":services.applications.pending_drafts(application_id),
             }
 
     @mcp.tool(name="questions.extract_from_posting",structured_output=True)

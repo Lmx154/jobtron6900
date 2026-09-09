@@ -74,15 +74,23 @@ STEP_MAP: dict[str, tuple[str, str | None, str, str | None]] = {
         "documents.save",
         "Read the approved master resume through its resource_uri. Write a tailored resume using ONLY "
         "facts that appear in that document, in the candidate facts, or in the job description. Then "
-        "call documents.save with document_type='application_resume' and approved=false.",
+        "call documents.save with document_type='application_resume' and approved=false, and call "
+        "workflow.next again.",
         "Writing your tailored resume from your master resume.",
     ),
     "prepare_cover_letter": (
         "generate_cover_letter",
         "documents.save",
         "Write the cover letter using ONLY facts already in Jobtron. Then call documents.save with "
-        "document_type='cover_letter' and approved=false.",
+        "document_type='cover_letter' and approved=false, and call workflow.next again.",
         "Writing the cover letter this posting requires.",
+    ),
+    "review_drafts": (
+        "review_drafts",
+        None,
+        "Say say_to_user word for word, including the URL, then stop. When the user approves, call "
+        "applications.approve_drafts with the ids they named, or all=true. Then call workflow.next again.",
+        None,
     ),
     "confirm_submission": (
         "confirm_submission",
@@ -170,12 +178,17 @@ def next_step(services: Any, application_id: int | None = None, url: str = "") -
         if application_url not in say and (not setup_url or setup_url not in say):
             say = f"{say} Review it here: {application_url}".strip()
 
+    # The ids of what the user is being asked about travel with the step, so the
+    # agent never has to guess which draft the user meant.
+    pending = {"pending": action["pending"]} if action.get("pending") else {}
+
     return _step(
         step_id,
         say,
         you_must,
         then_call,
         action.get("setup_url") or application_url,
+        **pending,
         application_id=application_id,
         application_url=application_url,
         capability=progress["capability"],

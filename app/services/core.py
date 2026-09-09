@@ -402,10 +402,7 @@ class QuestionService:
             (question_id, content, int(latest["version"]) + 1, int(approved), source_label),
         )
         if approved:
-            self.db.execute(
-                "UPDATE answers SET approved=CASE WHEN id=? THEN 1 ELSE 0 END WHERE question_id=?",
-                (aid, question_id),
-            )
+            self.approve_answer(aid)
         if save_to_bank:
             bank_entry = self.save_bank_entry(
                 question["question"],
@@ -416,6 +413,19 @@ class QuestionService:
             )
             self.db.execute("UPDATE questions SET bank_entry_id=? WHERE id=?", (bank_entry["id"], question_id))
         return required(self.db.one("SELECT * FROM answers WHERE id=?", (aid,)), "answer")
+
+    def approve_answer(self, answer_id: int):
+        """Approve one answer version and supersede any prior approval on its question.
+
+        One approved version per question, exactly as `save_answer(approved=True)`
+        has always done; this is that same path, reachable by id.
+        """
+        answer = required(self.db.one("SELECT * FROM answers WHERE id=?", (answer_id,)), "answer")
+        self.db.execute(
+            "UPDATE answers SET approved=CASE WHEN id=? THEN 1 ELSE 0 END WHERE question_id=?",
+            (answer_id, answer["question_id"]),
+        )
+        return required(self.db.one("SELECT * FROM answers WHERE id=?", (answer_id,)), "answer")
 
     def save_bank_entry(
         self,
@@ -460,19 +470,28 @@ class QuestionService:
             precision = len(matched) / len(searchable_tokens) if searchable_tokens else 0.0
             phrase_bonus = 0.5 if normalized_query and normalized_query in row["canonical_question"].lower() else 0.0
             row["match_score"] = round(coverage + (0.25 * precision) + phrase_bonus, 3)
+            # Unrounded on purpose: coverage == 1.0 is a gate for auto-applying an
+            # answer, so it must mean "every query token matched", not "nearly".
+            row["coverage"] = coverage
             row["matched_keywords"] = matched
             matches.append(row)
         matches.sort(key=lambda row: (row["match_score"], row["usage_count"], row["updated_at"]), reverse=True)
         return matches[: max(1, min(limit, 50))]
 
-    def apply_bank_answer(self, question_id: int, bank_entry_id: int, approved: bool = False):
+    def apply_bank_answer(
+        self,
+        question_id: int,
+        bank_entry_id: int,
+        approved: bool = False,
+        source_label: str | None = None,
+    ):
         entry = required(self.db.one("SELECT * FROM question_bank WHERE id=?", (bank_entry_id,)), "question bank entry")
         self.db.execute("UPDATE questions SET bank_entry_id=? WHERE id=?", (bank_entry_id, question_id))
         self.db.execute("UPDATE question_bank SET usage_count=usage_count+1 WHERE id=?", (bank_entry_id,))
         return self.save_answer(
             question_id,
             entry["answer"],
-            source_label=f"question_bank:{bank_entry_id}",
+            source_label=source_label or f"question_bank:{bank_entry_id}",
             approved=approved,
         )
 
@@ -668,6 +687,10 @@ class ApplicationService:
         "Withdrawn",
         "Closed",
     )
+    # The application documents that go through the one review stop, and how a
+    # sentence to the user names them.
+    DRAFT_DOCUMENT_LABELS = (("application_resume", "tailored resume"), ("cover_letter", "cover letter"))
+    AUTO_BANK_SOURCE_LABEL = "question_bank:auto"
 
     def __init__(self, db: Database):
         self.db = db
@@ -987,6 +1010,129 @@ class ApplicationService:
         )
         return self.progress(application_id)
 
+    def _auto_apply_bank_answers(self, unanswered_required: list[dict[str, Any]]) -> int:
+        """Answer required questions the user has already answered, once, elsewhere.
+
+        The safety property is not weakened: `search_bank` returns approved bank
+        entries only, and an entry is applied only when every token of the
+        question text matched it (coverage == 1.0), so the text is the user's own
+        approved words. A question with no usable tokens never auto-applies.
+
+        Returns how many answers were written; the caller re-evaluates when > 0.
+        """
+        assert self.services
+        questions = self.services.questions
+        applied = 0
+        for question in unanswered_required:  # bounded by the required questions
+            if not QuestionService._tokens(question["question"]):
+                continue
+            hits = questions.search_bank(question["question"], limit=1)
+            if not hits:
+                continue
+            hit = hits[0]
+            if not hit["approved"] or hit["coverage"] != 1.0:
+                continue
+            questions.apply_bank_answer(
+                question["id"],
+                hit["id"],
+                approved=True,
+                source_label=self.AUTO_BANK_SOURCE_LABEL,
+            )
+            applied += 1
+        return applied
+
+    @classmethod
+    def _pending_drafts(
+        cls,
+        app: dict[str, Any],
+        questions: list[dict[str, Any]],
+        documents: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Every latest version that is written but still unapproved.
+
+        This is the one computation behind both the `review_drafts` step and
+        `approve_drafts(all=True)`, so what the user is shown is exactly what
+        "approve all" approves.
+        """
+        pending: list[dict[str, Any]] = []
+        for question in questions:
+            if not question["required"]:
+                continue
+            latest = question["answers"][0] if question["answers"] else None
+            if latest and not latest["approved"]:
+                pending.append({"kind": "answer", "id": latest["id"], "label": question["question"]})
+        for document_type, label in cls.DRAFT_DOCUMENT_LABELS:
+            if document_type == "cover_letter" and not app["cover_letter_required"]:
+                continue
+            versions = [doc for doc in documents if doc["document_type"] == document_type]
+            latest = max(versions, key=lambda doc: doc["version"], default=None)
+            if latest and not latest["approved"]:
+                pending.append({"kind": "document", "id": latest["id"], "label": label})
+        return pending
+
+    def pending_drafts(self, application_id: int) -> list[dict[str, Any]]:
+        assert self.services
+        return self._pending_drafts(
+            self.get(application_id),
+            self.services.questions.list(application_id),
+            self.services.documents.list(application_id),
+        )
+
+    @staticmethod
+    def _pending_phrase(pending: list[dict[str, Any]]) -> str:
+        """One sentence naming what is drafted: '3 answers and the tailored resume are drafted.'"""
+        answers = sum(item["kind"] == "answer" for item in pending)
+        parts = [f"{answers} answer{'' if answers == 1 else 's'}"] if answers else []
+        parts += [f"the {item['label']}" for item in pending if item["kind"] == "document"]
+        phrase = f"{', '.join(parts[:-1])} and {parts[-1]}" if len(parts) > 1 else parts[0]
+        return f"{phrase} {'is' if len(pending) == 1 else 'are'} drafted."
+
+    def approve_drafts(
+        self,
+        application_id: int,
+        answer_ids: list[int] | None = None,
+        document_ids: list[int] | None = None,
+        all: bool = False,
+    ) -> dict[str, Any]:
+        """Approve the drafts the user named, or every pending one.
+
+        Every id is checked against this application before anything is written,
+        so a refused call approves nothing.
+        """
+        assert self.services
+        self.get(application_id)
+        if all:
+            pending = self.pending_drafts(application_id)
+            answer_ids = [item["id"] for item in pending if item["kind"] == "answer"]
+            document_ids = [item["id"] for item in pending if item["kind"] == "document"]
+        answer_ids = list(answer_ids or ())
+        document_ids = list(document_ids or ())
+        for answer_id in answer_ids:
+            required(
+                self.db.one(
+                    "SELECT a.id FROM answers a JOIN questions q ON q.id=a.question_id "
+                    "WHERE a.id=? AND q.application_id=?",
+                    (answer_id, application_id),
+                ),
+                f"answer {answer_id} on this application",
+            )
+        for document_id in document_ids:
+            required(
+                self.db.one(
+                    "SELECT id FROM documents WHERE id=? AND application_id=?",
+                    (document_id, application_id),
+                ),
+                f"document {document_id} on this application",
+            )
+        approved_answers = [self.services.questions.approve_answer(answer_id) for answer_id in answer_ids]
+        approved_documents = [self.services.documents.approve(document_id) for document_id in document_ids]
+        return {
+            "approved_answers": approved_answers,
+            "approved_documents": approved_documents,
+            "application": self.get(application_id),
+            "pending": self.pending_drafts(application_id),
+        }
+
     def progress(self, application_id: int):
         assert self.services
         app = self.get(application_id)
@@ -998,10 +1144,12 @@ class ApplicationService:
         considered_ids = {item["document_id"] for item in usage}
         unconsidered_academic = [doc for doc in enabled_academic if doc["id"] not in considered_ids]
         approved_types = {doc["document_type"] for doc in documents if doc["approved"]}
+        drafted_types = {doc["document_type"] for doc in documents}
         answered = sum(bool(question["current_answer"]) for question in questions)
         unanswered_required = [
             question for question in questions if question["required"] and not question["current_answer"]
         ]
+        pending_drafts = self._pending_drafts(app, questions, documents)
 
         checks = [
             {
@@ -1090,6 +1238,16 @@ class ApplicationService:
                 "must_share_url": True,
                 "blocked_by": readiness["blocked_by"],
             }
+        elif submitted:
+            # Applied ends the build loop. The package went out as it stands, so
+            # nothing below may ask for questions, drafts, or a review again --
+            # and nothing is written for it, including auto-applied bank answers.
+            next_action = {
+                "code": "post_submission_follow_up",
+                "requires_user_input": True,
+                "instruction": "Offer to record the next follow-up or deadline.",
+                "question": "This application is submitted and archived. Would you like to add a follow-up reminder?",
+            }
         elif unconsidered_academic:
             next_action = {
                 "code": "consider_academic_documents",
@@ -1130,6 +1288,11 @@ class ApplicationService:
                 "extraction_status": attempted,
             }
         elif unanswered_required:
+            if self._auto_apply_bank_answers(unanswered_required):
+                # An auto-applied answer is approved, so its question is simply no
+                # longer unanswered. Re-evaluate once against the new state; the
+                # second pass applies nothing, because the bank did not change.
+                return self.progress(application_id)
             question = unanswered_required[0]
             next_action = {
                 "code": "answer_required_question",
@@ -1138,33 +1301,44 @@ class ApplicationService:
                 "question_id": question["id"],
                 "question": question["question"],
             }
-        elif "application_resume" not in approved_types:
+        elif "application_resume" not in drafted_types:
             next_action = {
                 "code": "prepare_resume",
                 "requires_user_input": True,
-                "instruction": "Draft or attach an application-specific resume and request approval.",
+                "instruction": "Draft or attach an application-specific resume as an unapproved version.",
                 "question": "Would you like me to prepare the tailored resume for this application now?",
             }
-        elif app["cover_letter_required"] and "cover_letter" not in approved_types:
+        elif app["cover_letter_required"] and "cover_letter" not in drafted_types:
             next_action = {
                 "code": "prepare_cover_letter",
                 "requires_user_input": True,
-                "instruction": "Draft the required cover letter and request approval.",
+                "instruction": "Draft the required cover letter as an unapproved version.",
                 "question": "Would you like me to draft the required cover letter now?",
             }
-        elif not submitted:
+        elif pending_drafts:
+            application_url = f"{self.services.base_url}/applications/{application_id}"
+            next_action = {
+                "code": "review_drafts",
+                "requires_user_input": True,
+                "instruction": (
+                    "Give the user the URL and the list of drafts. Approve nothing on your own: "
+                    "call applications.approve_drafts only with what they name."
+                ),
+                "question": (
+                    f"{self._pending_phrase(pending_drafts)} Review them at {application_url}, "
+                    f"then tell me which to approve, or 'approve all'."
+                ),
+                "pending": pending_drafts,
+                "frontend_url": application_url,
+            }
+        else:
+            # Everything above is answered, drafted and approved, and `submitted`
+            # was ruled out at the top of the chain.
             next_action = {
                 "code": "confirm_submission",
                 "requires_user_input": True,
                 "instruction": "Do not mark Applied until the user confirms the external submission.",
                 "question": "The required package is complete. Have you submitted it so I can mark it Applied and archive it?",
-            }
-        else:
-            next_action = {
-                "code": "post_submission_follow_up",
-                "requires_user_input": True,
-                "instruction": "Offer to record the next follow-up or deadline.",
-                "question": "This application is submitted and archived. Would you like to add a follow-up reminder?",
             }
 
         return {

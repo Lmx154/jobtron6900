@@ -271,6 +271,7 @@ _APPLICATIONS_UI_TEMPLATE = r"""
         </div>`).join("");
       const questionCount = data.question_count ?? 0;
       const documentCount = data.document_count ?? 0;
+      const reusedAnswers = Number(data.reused_answer_count ?? 0);
       const percent = Number(progress.percent_complete ?? 0);
       const nextQuestion = next.question || next.instruction || "No further action is needed right now.";
 
@@ -302,6 +303,7 @@ _APPLICATIONS_UI_TEMPLATE = r"""
               <div class="stat"><strong>${escapeHtml(questionCount)}</strong><span>questions</span></div>
               <div class="stat"><strong>${escapeHtml(documentCount)}</strong><span>documents</span></div>
             </div>
+            ${reusedAnswers ? `<p class="notice">${escapeHtml(reusedAnswers)} answer(s) reused from your question bank.</p>` : ""}
             <p class="notice">${escapeHtml((progress.blocking_items ?? []).length ? `${progress.blocking_items.length} item(s) still need attention.` : "All required package checks are complete.")}</p>
           </section>
         </div>
