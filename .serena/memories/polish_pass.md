@@ -1,4 +1,6 @@
-# Polish pass (docs/polish-pass-plan.html)
+# Polish pass (docs/polish-pass-plan.html) — HISTORICAL
+
+Superseded by the tracker redesign. Now removed or unreachable: the `applications.tag`, `applications.attention` and `applications.log_update` MCP tools; the dashboard Today rail and calendar (`/dashboard` redirects to `/applications`); auto-apply in `progress()` (now read-only); the `capture_page_text`, `extract_questions` and `post_submission_follow_up` steps. Their service code (tags, `upcoming`, `attention`, `log_update`, `_auto_apply_bank_answers`, follow-up reminders) is still in `core.py`. Still live: migrations 4–6, cover-letter inference, standard questions plus `question_bank.seed_defaults`, `applications.approve_drafts`, `questions.extract_from_posting(retry=)` and `questions.detect_from_text`. The record below shows what the pass built.
 
 Follows the workflow rebuild. Decisions D1–D8 in the plan are fixed architecture.
 

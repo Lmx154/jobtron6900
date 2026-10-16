@@ -6,7 +6,7 @@
   <div>
     <p class="eyebrow">One workspace · three clients</p>
     <h1>Install Jobtron as an MCP server</h1>
-    <p class="lede">Jobtron exposes the same tools and shared application history to Codex, OpenCode, and Claude Code. Install it once per client, then use only one client or agent session at a time.</p>
+    <p class="lede">Jobtron exposes the same tools and shared application history to Codex, OpenCode, and Claude Code. Install it once per client. Several clients and sessions can run at once; they share one database and one web interface.</p>
   </div>
   <div class="connection-card"><span class="status-dot"></span><div><strong>MCP server name</strong><code>jobtron6900</code></div></div>
 </div>
@@ -37,7 +37,7 @@ uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button
   <div class="section-heading"><span>03</span><div><p class="eyebrow">Open the interface</p><h2>The agent should always give you this link</h2></div></div>
   <div class="command-row"><pre id="dashboard-link"><code>{{ dashboard_url }}</code></pre><button class="copy-button" data-copy-target="dashboard-link">Copy</button></div>
   <p><a class="button" href="{{ dashboard_url }}">Open the application tracker</a></p>
-  <p class="quiet">The MCP tool <code>ui.show_dashboard</code> returns current applications and this exact frontend URL. Even clients that cannot render MCP Apps inline can open the browser tracker.</p>
+  <p class="quiet">The MCP tool <code>ui.show_dashboard</code> returns current applications and this exact frontend URL. Even clients that cannot render MCP Apps inline can open the browser tracker. Without an agent, <code>uv run jobtron open</code> starts the interface in the background if needed and opens it.</p>
 </section>
 
 <section class="guide-section">
@@ -51,11 +51,11 @@ uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button
 </section>
 
 <section class="guide-section review-section">
-  <div class="section-heading"><span>05</span><div><p class="eyebrow">Ownership guard</p><h2>Only one client can own Jobtron</h2></div></div>
+  <div class="section-heading"><span>05</span><div><p class="eyebrow">Shared sessions</p><h2>Every client shares one Jobtron</h2></div></div>
   <div class="review-grid">
-    <div><strong>One MCP process</strong><p>An operating-system lock prevents Codex, OpenCode, Claude Code, or a second session from opening the same Jobtron store concurrently.</p></div>
-    <div><strong>Clear conflict message</strong><p>If Jobtron is already active, the second client reports which client and process owns it instead of racing SQLite or borrowing another frontend.</p></div>
-    <div><strong>Automatic release</strong><p>Closing the owning client releases the operating-system lock. A crash cannot leave a permanently locked database.</p></div>
+    <div><strong>One web interface</strong><p>The first session to start launches the web interface as a detached background process. Later sessions find it and reuse it. It keeps running after the agent session ends; stop it with <code>uv run jobtron stop</code>.</p></div>
+    <div><strong>Safe concurrent access</strong><p>SQLite runs in WAL mode and only the web process holds the data-store lock, so Codex, OpenCode, and Claude Code can all use Jobtron at the same time.</p></div>
+    <div><strong>Clear port conflicts</strong><p>If another program holds the port, Jobtron says so and leaves it alone rather than switching ports. The MCP tools keep working without the web interface.</p></div>
   </div>
 </section>
 
@@ -63,7 +63,7 @@ uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button
   <div class="section-heading"><span>06</span><div><p class="eyebrow">Diagnostics</p><h2>If Jobtron does not connect</h2></div></div>
   <div class="command-row"><pre id="doctor-command"><code>uv run jobtron-setup doctor</code></pre><button class="copy-button" data-copy-target="doctor-command">Copy</button></div>
   <ul>
-    <li>Close every other Jobtron-enabled client or session, then restart one client.</li>
+    <li>Run <code>uv run jobtron status</code> to see whether the web interface is running, its URL and pid, and which agents have Jobtron registered.</li>
     <li>Run the client-specific verification command from section 02.</li>
     <li>Run <code>uv run jobtron-setup status</code> to compare legacy, canonical, and runtime data paths.</li>
     <li>If port 8765 is occupied, close that process or set the same <code>JOBTRON_PORT</code> in the client configuration.</li>

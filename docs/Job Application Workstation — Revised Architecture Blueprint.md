@@ -1,5 +1,7 @@
 # Job Application Workstation — Revised Architecture Blueprint
 
+> **Historical (2026-10-16).** This is the original blueprint. The current product is a narrower local application tracker that drafts only answers and cover letters; see `README.md` and `CLAUDE.md`.
+
 ## 1. Product Definition
 
 A simple, local-first job application workspace that stores everything known about the user and every application they submit.

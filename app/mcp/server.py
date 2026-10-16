@@ -316,7 +316,7 @@ by the user at /profile. Reuse approved answers only as visible, unapproved appl
     def questions_extract_from_posting(application_id:int,retry:bool=False) -> dict[str,Any]:
         """Fetch this application's saved job-posting URL and list any application questions on it.
 
-        CALL WHEN: workflow.next returns step_id "extract_questions".
+        CALL WHEN: workflow.next returns step_id "inventory_questions" and a posting URL is saved.
         DO NOT CALL WHEN: the application has no URL, or questions are already recorded.
         RETURNS: status ("ok" | "blocked" | "empty" | "error"), detected_questions, and say_to_user.
         A status other than "ok" is a normal outcome, not a failure: relay say_to_user and let the
@@ -362,7 +362,7 @@ by the user at /profile. Reuse approved answers only as visible, unapproved appl
         """Use when the server could not fetch the posting: pass the page's visible text, read with
         your own browser tool (source='browser') or pasted by the user (source='paste'). Never invent text.
 
-        CALL WHEN: workflow.next returns step_id "capture_page_text".
+        CALL WHEN: during "inventory_questions", after questions.extract_from_posting could not read the page.
         RETURNS: detected_questions, count, stored_job_description, extraction_status, and say_to_user.
         If it returns questions, add each one with questions.add and then call
         applications.set_questions_reviewed. If it returns none, call workflow.next again and relay

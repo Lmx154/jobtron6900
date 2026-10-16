@@ -7,5 +7,5 @@
 - Missing domain records raise `NotFoundError` through the shared `required` helper; adapters translate/present domain outcomes.
 - Uploaded filenames are sanitized; stored files receive UUID prefixes. Any path retrieval must retain the resolved-parent containment check.
 - Version rather than overwrite documents, answers, and submitted application snapshots. Approval changes must retain the single-approved-version invariant within global/application scope.
-- MCP tool/resource names are domain-prefixed (`candidate_*`, `applications_*`, `questions_*`, `documents_*`, `assets_*`, `events_*`); UI presentation tools return authoritative review links/resources.
+- MCP tool names are dotted and domain-prefixed (`ui.*`, `workflow.*`, `candidate.*`, `applications.*`, `questions.*`, `answers.*`, `question_bank.*`, `documents.*`, `assets.*`); UI presentation tools return authoritative review links/resources.
 - Tests emphasize externally observable workflow invariants across service, web, and MCP surfaces; use temporary data directories and avoid personal/local data.
