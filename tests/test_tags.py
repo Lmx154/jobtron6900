@@ -121,20 +121,16 @@ def test_migration_4_on_a_v3_database_reads_back_empty_tags(tmp_path):
 
 # --------------------------------------------------------------------------- web
 
-def test_dashboard_tag_filter_shows_only_the_matching_application(settings):
+def test_legacy_tag_links_open_tracker_without_tag_chips(settings):
     app = create_app(settings)
-    remote = app.state.services.applications.create("Boeing", "GNC Engineer")
-    other = app.state.services.applications.create("Acme", "Widget Maker")
-    app.state.services.applications.update(remote["id"], tags="remote")
-
+    record = app.state.services.applications.create('Boeing','GNC Engineer')
+    app.state.services.applications.update(record['id'],tags='remote')
     with TestClient(app) as client:
-        response = client.get("/?tag=remote")
+        response = client.get('/?tag=remote')
         assert response.status_code == 200
-        # The calendar/agenda panels intentionally still show every application's
-        # lifecycle events; only the "Recent applications" list is tag-filtered.
-        recent = response.text.split("Recent applications</h2>", 1)[1]
-        assert "GNC Engineer" in recent
-        assert "Widget Maker" not in recent
+        assert 'GNC Engineer' in response.text
+        assert 'tag-chips' not in response.text
+    assert app.state.services.applications.get(record['id'])['tags'] == 'remote'
 
 
 def test_applications_list_query_filter_shows_only_the_matching_application(settings):
@@ -149,25 +145,15 @@ def test_applications_list_query_filter_shows_only_the_matching_application(sett
         assert "Widget Maker" not in response.text
 
 
-def test_detail_post_updates_tags(settings):
+def test_simplified_job_edit_preserves_existing_tags(settings):
     app = create_app(settings)
-    application = app.state.services.applications.create("Boeing", "GNC Engineer")
-
+    record = app.state.services.applications.create('Boeing','GNC Engineer')
+    app.state.services.applications.update(record['id'],tags='remote')
     with TestClient(app) as client:
-        response = client.post(
-            f"/applications/{application['id']}",
-            data={
-                "company_name": "Boeing",
-                "formal_title": "GNC Engineer",
-                "status": "Draft",
-                "tags": "Onsite, remote",
-            },
-        )
+        response = client.post(f"/applications/{record['id']}",data={'company_name':'Boeing','formal_title':'Updated role','notes':'My notes'})
         assert response.status_code == 200
-        detail = client.get(f"/applications/{application['id']}")
-        assert "onsite" in detail.text and "remote" in detail.text
-
-    assert app.state.services.applications.get(application["id"])["tags"] == "onsite,remote"
+        assert 'Updated role' in response.text and 'My notes' in response.text
+    assert app.state.services.applications.get(record['id'])['tags'] == 'remote'
 
 
 # --------------------------------------------------------------------------- MCP
@@ -183,20 +169,12 @@ def test_mcp_applications_list_filters_by_tag(settings):
     assert [row["id"] for row in payload] == [remote["id"]]
 
 
-def test_mcp_applications_tag_round_trips(settings):
+def test_mcp_tracks_active_flag_without_exposing_tag_mutation(settings):
     app = create_app(settings)
-    application = app.state.services.applications.create("Boeing", "GNC Engineer")
-
-    added = asyncio.run(
-        app.state.mcp.call_tool(
-            "applications.tag", {"application_id": application["id"], "add": ["Remote", "Referral"]}
-        )
-    )
-    assert json.loads(added.content[0].text)["tags"] == "referral,remote"
-
-    removed = asyncio.run(
-        app.state.mcp.call_tool(
-            "applications.tag", {"application_id": application["id"], "remove": ["referral"]}
-        )
-    )
-    assert json.loads(removed.content[0].text)["tags"] == "remote"
+    application = app.state.services.applications.create('Boeing','GNC Engineer')
+    tools = {tool.name for tool in asyncio.run(app.state.mcp.list_tools())}
+    assert 'applications.tag' not in tools
+    asyncio.run(app.state.mcp.call_tool('applications.set_active',{'application_id':application['id'],'active':False}))
+    assert not app.state.services.applications.get(application['id'])['active']
+    result = asyncio.run(app.state.mcp.call_tool('applications.list',{'active':False}))
+    assert [row['id'] for row in result.structured_content['result']] == [application['id']]

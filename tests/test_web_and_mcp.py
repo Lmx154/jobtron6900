@@ -5,12 +5,14 @@ import select
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 from urllib.request import urlopen
 
 import pytest
 from fastapi.testclient import TestClient
 
+from app.cli import probe, stop_running
 from app.config import (
     InstanceInUseError,
     InstanceLease,
@@ -25,66 +27,62 @@ from app.mcp.ui import APPLICATIONS_UI, build_applications_ui
 
 
 def test_web_notebook_workflow(settings):
-    app=create_app(settings)
+    app = create_app(settings)
     with TestClient(app) as client:
-        assert client.get("/").status_code==200
-        guide=client.get("/guide")
-        assert guide.status_code==200
-        assert "Install Jobtron as an MCP server" in guide.text
-        assert "Codex" in guide.text and "OpenCode" in guide.text and "Claude Code" in guide.text
-        assert "jobtron-setup install" in guide.text
-        response=client.post("/applications",data={"company_name":"Acme","formal_title":"Engineer","job_description":"Make things"},follow_redirects=False)
-        assert response.status_code==303
-        workspace=response.headers["location"]
-        assert "Engineer" in client.get(workspace).text
-        app_id=int(workspace.rsplit("/",1)[1])
-        client.post(f"{workspace}/questions",data={"question":"Why you?","field_type":"long_text","required":"on"})
-        question_id=app.state.services.questions.list(app_id)[0]["id"]
-        client.post(f"{workspace}/questions/{question_id}/answers",data={"content":"Because.","source_label":"manual","approved":"on"})
-        client.post(f"{workspace}/assets",data={"title":"Screenshot","asset_type":"screenshot"},files={"file":("screen.png",b"pixels","image/png")})
+        assert client.get('/').status_code == 200
+        guide = client.get('/guide')
+        assert guide.status_code == 200
+        assert 'Install Jobtron as an MCP server' in guide.text
+        assert 'Codex' in guide.text and 'OpenCode' in guide.text and 'Claude Code' in guide.text
+        assert 'jobtron-setup install' in guide.text
+        client.post('/profile/resume', files={'file':('resume.txt',b'I build things.','text/plain')},data={'approved':'on'})
+        response=client.post('/applications',data={'company_name':'Acme','formal_title':'Engineer','job_description':'Make things'},follow_redirects=False)
+        assert response.status_code == 303
+        workspace = response.headers['location']
+        app_id = int(workspace.rsplit('/',1)[1])
+        client.post(workspace+'/questions',data={'question':'Why you?','required':'on'})
+        question_id=app.state.services.questions.list(app_id)[0]['id']
+        client.post(f'{workspace}/questions/{question_id}/answers',data={'content':'Because.','approved':'on'})
+        client.post(workspace+'/questions/reviewed',data={'questions_reviewed':'on'})
         html=client.get(workspace).text
-        assert "Why you?" in html and "Because." in html and "Screenshot" in html
-        assert "Autofill with agent" in html
-        assert 'class="question-card"' in html
-        plan=client.post(f"{workspace}/autofill-plan",data={"sources":"job_posting","targets":["application_resume","application_questions"]})
-        assert plan.status_code==200
-        assert plan.json()["valid"] is True
-        assert f"Autofill Jobtron application {app_id}" in plan.json()["agent_prompt"]
+        assert 'Why you?' in html and 'Because.' in html
+        assert 'Prepare agent request' in html and 'Autofill with agent' not in html
+        plan=client.post(workspace+'/drafts',headers={'accept':'application/json'})
+        assert plan.status_code == 200 and plan.json()['valid']
+        assert 'Never generate or change a resume' in plan.json()['agent_prompt']
 
 
-def test_mcp_surface_matches_blueprint(settings):
+def test_mcp_surface_matches_tracker_scope(settings):
     app=create_app(settings)
     tools={tool.name:tool for tool in asyncio.run(app.state.mcp.list_tools())}
-    assert {"candidate.get_context","applications.list","applications.get_context","applications.progress","applications.approve_drafts","applications.set_questions_reviewed","questions.add","answers.save","question_bank.search","question_bank.apply","documents.save","documents.approve","documents.academic","documents.mark_considered","assets.get","events.add","ui.show_dashboard","ui.show_applications","ui.show_application"} <= tools.keys()
-    for name in ("ui.show_applications","ui.show_application"):
-        assert tools[name].meta["ui"]["resourceUri"]=="ui://jobtron/applications.html"
-        assert tools[name].meta["openai/outputTemplate"]=="ui://jobtron/applications.html"
+    assert {'candidate.get_context','applications.list','applications.get_context','applications.progress','applications.approve_drafts','applications.set_questions_reviewed','applications.set_active','applications.prepare_drafts','applications.create_bundle','applications.list_bundles','questions.add','answers.save','question_bank.search','question_bank.apply','documents.save','documents.approve','ui.show_dashboard','ui.show_applications','ui.show_application'} <= tools.keys()
+    assert not {'applications.prepare_autofill','applications.autofill_options','applications.attention','events.add','documents.academic'} & tools.keys()
+    for name in ('ui.show_applications','ui.show_application'):
+        assert tools[name].meta['ui']['resourceUri']=='ui://jobtron/applications.html'
+        assert tools[name].meta['openai/outputTemplate']=='ui://jobtron/applications.html'
     resources=asyncio.run(app.state.mcp.list_resource_templates())
-    assert any(str(resource.uri_template)=="jobtron://assets/{asset_id}" for resource in resources)
-    assert any(str(resource.uri_template)=="jobtron://documents/{document_id}" for resource in resources)
+    assert any(str(resource.uri_template)=='jobtron://documents/{document_id}' for resource in resources)
     static_resources=asyncio.run(app.state.mcp.list_resources())
-    assert any(str(resource.uri)=="jobtron://dashboard" for resource in static_resources)
-    review=next(resource for resource in static_resources if str(resource.uri)=="ui://jobtron/applications.html")
-    assert review.mime_type=="text/html;profile=mcp-app"
-    assert "Presented by the agent" in APPLICATIONS_UI
-    assert 'request("ui/initialize"' in APPLICATIONS_UI
-    assert "Open the live Jobtron dashboard" in APPLICATIONS_UI
-    assert "http://localhost:9876/applications" in build_applications_ui("http://localhost:9876")
+    assert any(str(resource.uri)=='jobtron://dashboard' for resource in static_resources)
+    review=next(resource for resource in static_resources if str(resource.uri)=='ui://jobtron/applications.html')
+    assert review.mime_type=='text/html;profile=mcp-app'
+    assert 'ui/initialize' in APPLICATIONS_UI
+    assert 'Draft — needs review' in APPLICATIONS_UI
+    assert 'http://localhost:9876/applications' in build_applications_ui('http://localhost:9876')
 
 
-def test_the_detail_page_marks_an_answer_reused_from_the_question_bank(settings):
+def test_detail_page_keeps_reused_answer_visible_for_review(settings):
     app=create_app(settings)
     services=app.state.services
-    application=services.applications.create("Acme","Engineer",job_description="Build things")
-    question=services.questions.add(application["id"],"Are you authorized to work?",required_field=True)
-    entry=services.questions.save_bank_entry("Are you authorized to work?","Yes.",approved=True)
-    services.questions.apply_bank_answer(question["id"],entry["id"],approved=True,source_label="question_bank:auto")
-
+    application=services.applications.create('Acme','Engineer',job_description='Build things')
+    question=services.questions.add(application['id'],'Are you authorized to work?',required_field=True)
+    entry=services.questions.save_bank_entry('Are you authorized to work?','Yes.',approved=True)
+    services.questions.apply_bank_answer(question['id'],entry['id'],approved=False,source_label='question_bank:auto')
     with TestClient(app) as client:
         html=client.get(f"/applications/{application['id']}").text
-
-    assert "Reused from bank" in html
-    assert "question_bank:auto" in html
+    assert 'Yes.</textarea>' in html
+    assert '>Draft<' in html
+    assert 'I reviewed this answer and approve it' in html
 
 
 def test_approve_drafts_over_mcp_refuses_a_draft_from_another_application(settings):
@@ -103,30 +101,45 @@ def test_approve_drafts_over_mcp_refuses_a_draft_from_another_application(settin
 
 def test_agent_presented_ui_returns_authoritative_review(settings):
     app=create_app(settings)
-    application=app.state.services.applications.create("Acme","Engineer",job_description="Build things")
+    services=app.state.services
+    application=services.applications.create('Acme','Engineer',job_description='Build things')
+    collection=asyncio.run(app.state.mcp.call_tool('ui.show_applications',{'application_ids':[application['id']]}))
+    assert collection.structured_content['view']=='applications'
+    assert collection.structured_content['frontend_url']=='http://127.0.0.1:8765/applications'
+    assert collection.structured_content['applications'][0]['formal_title']=='Engineer'
+    review=asyncio.run(app.state.mcp.call_tool('ui.show_application',{'application_id':application['id'],'reason':'created'}))
+    assert review.structured_content['view']=='application'
+    assert review.structured_content['frontend_url']==f"http://127.0.0.1:8765/applications/{application['id']}"
+    assert review.structured_content['reason_label']=='Application created'
+    assert review.structured_content['application']['company_name']=='Acme'
+    assert review.structured_content['progress']['next_action']['requires_user_input'] is True
+    assert 'autofill' not in review.structured_content
+    services.documents.save('master_resume','Original',text_content='My resume',approved=True)
+    services.applications.set_questions_reviewed(application['id'],True)
+    plan=asyncio.run(app.state.mcp.call_tool('applications.prepare_drafts',{'application_id':application['id']}))
+    assert plan.structured_content['valid'] is True
+    assert 'Never generate or change a resume' in plan.structured_content['agent_prompt']
+    assert '<form' not in APPLICATIONS_UI
+    assert 'applications.prepare_autofill' not in APPLICATIONS_UI
+    assert 'Draft — needs review' in APPLICATIONS_UI
 
-    collection=asyncio.run(app.state.mcp.call_tool("ui.show_applications",{"application_ids":[application["id"]]}))
-    assert collection.structured_content["view"]=="applications"
-    assert collection.structured_content["frontend_url"]=="http://127.0.0.1:8765/applications"
-    assert collection.structured_content["applications"][0]["formal_title"]=="Engineer"
 
-    review=asyncio.run(app.state.mcp.call_tool("ui.show_application",{"application_id":application["id"],"reason":"created"}))
-    assert review.structured_content["view"]=="application"
-    assert review.structured_content["frontend_url"]==f"http://127.0.0.1:8765/applications/{application['id']}"
-    assert review.structured_content["reason_label"]=="Application created"
-    assert review.structured_content["application"]["company_name"]=="Acme"
-    assert review.structured_content["progress"]["next_action"]["requires_user_input"] is True
-    assert review.structured_content["autofill"]["sources"][0]["id"]=="job_posting"
+def _stop_ui(data_dir, port):
+    settings = Settings(data_dir, port=port)
+    deadline = time.monotonic() + 5
+    while probe(settings) != "ours" and time.monotonic() < deadline:
+        time.sleep(0.2)
+    stop_running(settings)
 
-    options=asyncio.run(app.state.mcp.call_tool("applications.autofill_options",{"application_id":application["id"]}))
-    assert options.structured_content["application_id"]==application["id"]
-    plan=asyncio.run(app.state.mcp.call_tool("applications.prepare_autofill",{"application_id":application["id"],"source_ids":["job_posting"],"target_ids":["cover_letter"]}))
-    assert plan.structured_content["valid"] is True
-    assert "Do not mark the application Applied" in plan.structured_content["agent_prompt"]
-    assert "<form" not in APPLICATIONS_UI
-    assert "Open live frontend" in APPLICATIONS_UI
-    assert 'request("tools/call"' in APPLICATIONS_UI
-    assert "applications.prepare_autofill" in APPLICATIONS_UI
+
+def _wait_for_ui(port):
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            return json.loads(urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5).read())  # noqa: S310
+        except OSError:
+            assert time.monotonic() < deadline, "the UI never came up"
+            time.sleep(0.2)
 
 
 def test_installed_stdio_entrypoint_completes_mcp_handshake(tmp_path):
@@ -159,33 +172,31 @@ def test_installed_stdio_entrypoint_completes_mcp_handshake(tmp_path):
         check=True,
         env=environment,
     )
+    _stop_ui(tmp_path, port)
     response = json.loads(completed.stdout)
     assert response["result"]["serverInfo"]["name"] == "jobtron6900"
     instructions = response["result"]["instructions"]
-    assert "ui.show_dashboard" in instructions[:512]
-    assert "frontend_url" in instructions[:512]
-    # The agent must be told the ONE tool to call after every state change.
-    # That was applications.progress; it is now the workflow engine that wraps it.
-    assert "workflow.next" in instructions[:512]
-    assert "workflow.start_from_url" in instructions
-    assert "say_to_user" in instructions[:512]
+    assert "Never create a custom resume" in instructions[:512]
+    assert "ui.show_application" in instructions and "frontend_url" in instructions
+    assert "workflow.next" in instructions
+    assert "applications.prepare_drafts" in instructions
+    assert "new unapproved version" in instructions
+    assert "review" in instructions.lower()
     assert len(instructions) <= 2000
 
 
-def test_academic_document_upload_extracts_and_displays_context_flag(settings):
+def test_original_resume_upload_extracts_and_remains_downloadable(settings):
     app=create_app(settings)
     with TestClient(app) as client:
-        response=client.post(
-            "/profile/academic-documents",
-            data={"document_type":"academic_transcript","title":"Transcript","use_for_applications":"on"},
-            files={"file":("transcript.txt",b"BSc Computer Engineering\nGPA 3.9","text/plain")},
-            follow_redirects=False,
-        )
+        response=client.post('/profile/resume',data={'title':'Original resume','approved':'on'},files={'file':('resume.txt',b'BSc Computer Engineering','text/plain')},follow_redirects=False)
         assert response.status_code==303
-        html=client.get("/profile").text
-        assert "Transcript" in html
-        assert "GPA 3.9" in html
-        assert "Application context" in html
+        html=client.get('/profile').text
+        assert 'Original resume' in html
+        assert 'Selected for new applications' in html
+        assert 'Academic documents' not in html
+        resume=app.state.services.documents.list(None,'master_resume')[0]
+        assert resume['text_content']=='BSc Computer Engineering'
+        assert client.get(f"/profile/resume/{resume['id']}").content==b'BSc Computer Engineering'
 
 
 def test_dashboard_tool_health_and_instruction_budget(settings):
@@ -203,8 +214,8 @@ def test_dashboard_tool_health_and_instruction_budget(settings):
     assert result.structured_content["applications"][0]["company_name"] == "Dashboard Co"
 
     instructions = app.state.mcp._lowlevel_server.create_initialization_options().instructions
-    assert "ui.show_dashboard" in instructions[:512]
-    assert "frontend_url" in instructions[:512]
+    assert "Never create a custom resume" in instructions[:512]
+    assert "ui.show_application" in instructions and "frontend_url" in instructions
     assert len(instructions) <= 2000
 
 
@@ -282,7 +293,7 @@ def _mcp_handshake(stream_in, stream_out, name):
 
 
 def test_stdio_second_client_shares_the_frontend_and_serves_its_own_tools(tmp_path):
-    """Every MCP client gets a process; they share one database and one web UI.
+    """Every MCP client gets a process; they share one database and one detached web UI.
 
     A second client used to exit(2) on the instance lease, which clients render
     as "connected (0 tools)" because the explanation only reaches stderr.
@@ -316,9 +327,7 @@ def test_stdio_second_client_shares_the_frontend_and_serves_its_own_tools(tmp_pa
         assert second_tools == first_tools, "a second client must serve the same tools"
         assert second.poll() is None, "a second client must not exit"
 
-        health = json.loads(
-            urlopen(f"http://127.0.0.1:{port}/healthz", timeout=5).read()  # noqa: S310
-        )
+        health = _wait_for_ui(port)
         assert health["service"] == "jobtron6900"
         assert health["status"] == "ready"
     finally:
@@ -340,6 +349,7 @@ def test_stdio_second_client_shares_the_frontend_and_serves_its_own_tools(tmp_pa
         text=True, capture_output=True, timeout=25,
         env={**environment, "JOBTRON_CLIENT": "opencode-test"}, check=True,
     )
+    _stop_ui(tmp_path / "shared", port)
     assert json.loads(handed_off.stdout)["result"]["serverInfo"]["name"] == "jobtron6900"
 
 
@@ -363,7 +373,7 @@ def test_opencode_installer_preserves_unrelated_global_configuration(tmp_path, m
 
 
 def test_stdio_serves_tools_even_when_the_port_belongs_to_something_else(tmp_path):
-    """A busy port must not cost the user their tools; Jobtron moves the UI."""
+    """A busy port must not cost the user their tools; the UI stays off and the port is never changed."""
     command = Path(sys.executable).with_name("jobtron-mcp")
     with socket.socket() as occupied:
         occupied.bind(("127.0.0.1", 0))

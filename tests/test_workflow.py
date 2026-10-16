@@ -20,7 +20,7 @@ def test_complete_application_context_and_immutable_archive(services):
     assert context["candidate"]["profile"]["name"]=="Ada Engineer"
     assert context["questions"][0]["current_answer"]["id"]==final["id"]
     assert context["completeness"]["job_description"] is True
-    assert context["completeness"]["application_resume"] is True
+    assert context["pinned_resume"]["document_type"] == "master_resume"
     assert context["completeness"]["questions_found"]==1
     assert context["completeness"]["questions_answered"]==1
     assert services.assets.content(asset["id"])==b"not-a-real-png"
@@ -39,34 +39,17 @@ def test_complete_application_context_and_immutable_archive(services):
     assert first["version"]==1 and final["version"]==2
 
 
-def test_autofill_plan_exposes_resources_and_validates_agent_request(services):
-    services.candidate.update_profile(name="Ada Engineer",email="ada@example.com")
-    services.candidate.add_fact("project","Flight computer","Built avionics",verified=True)
-    master=services.documents.save("master_resume","Master",text_content="Resume",approved=True)
-    services.questions.save_bank_entry("Why this role?","Mission fit","motivation",approved=True)
-    app=services.applications.create("Orbital Labs","Engineer",job_description="Build flight software")
-    tailored=services.documents.save("application_resume","Tailored",app["id"],"Draft",approved=False)
-
-    options=services.applications.autofill_options(app["id"])
-    source_ids={source["id"] for source in options["sources"]}
-    assert {"job_posting","candidate_profile","candidate_facts","question_bank"} <= source_ids
-    assert f"master_resume:{master['id']}" in source_ids
-    assert f"application_document:{tailored['id']}" in source_ids
-
-    invalid=services.applications.prepare_autofill(app["id"],[],["custom_resource"],"")
-    assert invalid["valid"] is False
-    assert len(invalid["errors"])==2
-
-    plan=services.applications.prepare_autofill(
-        app["id"],
-        ["job_posting",f"master_resume:{master['id']}","question_bank"],
-        ["application_resume","cover_letter","application_questions","custom_resource"],
-        "Create a short recruiter summary",
-    )
-    assert plan["valid"] is True
-    assert "Create a short recruiter summary" in plan["agent_prompt"]
-    assert "question_bank.search" in plan["agent_prompt"]
-    assert "ui.show_application" in plan["agent_prompt"]
+def test_generation_request_is_limited_to_answers_and_letter(ready_services):
+    services = ready_services
+    app = services.applications.create("Orbital Labs", "Engineer", job_description="Build flight software")
+    assert not services.applications.prepare_drafts(app["id"])["valid"]
+    services.applications.set_questions_reviewed(app["id"])
+    plan = services.applications.prepare_drafts(app["id"])
+    assert plan["valid"]
+    assert "ONLY the application answers and cover letter" in plan["agent_prompt"]
+    assert "approved=false" in plan["agent_prompt"]
+    assert "Never generate or change a resume" in plan["agent_prompt"]
+    assert "applications.create_bundle" in plan["agent_prompt"]
 
 
 def test_versions_are_scoped_and_approval_is_singular(services):
@@ -81,62 +64,27 @@ def test_versions_are_scoped_and_approval_is_singular(services):
         services.applications.update(app["id"],status="Invented Workflow")
 
 
-def test_progress_gates_on_candidate_setup_before_anything_else(services):
-    """An application cannot advance while the candidate has no resume or profile."""
-    app=services.applications.create("Progress Co","Systems Engineer",url="https://example.test/job",job_description="Build systems")
-
-    progress=services.applications.progress(app["id"])
-    assert progress["capability"]=="draft_only"
-    assert progress["next_action"]["code"]=="complete_candidate_setup"
-    assert progress["next_action"]["requires_user_input"] is True
-    assert progress["next_action"]["must_share_url"] is True
-    assert set(progress["next_action"]["blocked_by"])=={
-        "master_resume","profile.name","profile.email","profile.phone","profile.location",
-    }
-    question=progress["next_action"]["question"]
-    assert "master resume" in question
-    assert progress["next_action"]["setup_url"] in question
-    assert "Basic profile information complete" in progress["blocking_items"]
-    assert "Master resume on file" in progress["blocking_items"]
-
-    # A profile alone is not enough to generate a tailored resume.
-    services.candidate.update_profile(name="Ada",email="a@example.com",phone="555",location="CA")
-    assert services.applications.progress(app["id"])["capability"]=="partial"
-    assert services.applications.progress(app["id"])["next_action"]["code"]=="complete_candidate_setup"
-
-    services.documents.save("master_resume","Master",text_content="Resume",approved=True)
-    progress=services.applications.progress(app["id"])
-    assert progress["capability"]=="full"
-    # The posting has a URL and has not been scraped yet, so Jobtron tries that first.
-    assert progress["next_action"]["code"]=="extract_questions"
-    services.applications.record_question_extraction(app["id"],"empty","The page rendered in JavaScript.")
-    # Phase 5 (D7): a failed server-side fetch hands the read to the agent's own
-    # browser tool, or a paste, instead of jumping straight to "no questions found".
-    fallback=services.applications.progress(app["id"])["next_action"]
-    assert fallback["code"]=="capture_page_text"
-    assert fallback["url"]==app["url"]
-    assert fallback["extraction_status"]=="empty"
+def test_progress_needs_resume_but_not_duplicate_profile_fields(services):
+    app = services.applications.create("Progress Co", "Engineer", job_description="Build systems")
+    assert services.applications.progress(app["id"])["next_action"]["code"] == "complete_candidate_setup"
+    services.documents.save("master_resume", "Master", text_content="Resume", approved=True)
+    progress = services.applications.progress(app["id"])
+    assert progress["capability"] == "full"
+    assert progress["next_action"]["code"] == "inventory_questions"
+    assert "candidate_profile" not in [check["key"] for check in progress["checks"]]
 
 
-def test_progress_returns_completeness_blockers_and_next_question(ready_services):
-    services=ready_services
-    app=services.applications.create("Progress Co","Systems Engineer",url="https://example.test/job",job_description="Build systems")
-
-    services.applications.record_question_extraction(app["id"],"ok","")
-    progress=services.applications.progress(app["id"])
-    assert progress["percent_complete"]<100
-    assert progress["next_action"]["code"]=="inventory_questions"
-    assert progress["next_action"]["requires_user_input"] is True
-    assert "confirm" in progress["next_action"]["question"].lower()
-
+def test_progress_finishes_with_reviewed_letter_without_tailored_resume(ready_services):
+    services = ready_services
+    app = services.applications.create("Progress Co", "Engineer", job_description="Build systems")
     services.applications.set_questions_reviewed(app["id"])
-    progress=services.applications.progress(app["id"])
-    assert progress["next_action"]["code"]=="prepare_resume"
-    services.documents.save("application_resume","Tailored",app["id"],"Resume",approved=True)
-    progress=services.applications.progress(app["id"])
-    assert progress["ready_to_apply"] is True
-    assert progress["percent_complete"]==100
-    assert progress["next_action"]["code"]=="confirm_submission"
+    assert services.applications.progress(app["id"])["next_action"]["code"] == "prepare_cover_letter"
+    services.documents.save("cover_letter", "Letter", app["id"], "Letter", approved=True)
+    progress = services.applications.progress(app["id"])
+    assert progress["complete"] is True
+    assert progress["percent_complete"] == 100
+    assert progress["next_action"]["code"] == "package_complete"
+    assert services.documents.list(app["id"], "application_resume") == []
 
 
 def test_academic_document_is_extracted_enabled_and_marked_considered(ready_services):
@@ -156,10 +104,9 @@ def test_academic_document_is_extracted_enabled_and_marked_considered(ready_serv
 
     app=services.applications.create("Academic Co","Controls Engineer",job_description="Design controls")
     progress=services.applications.progress(app["id"])
-    assert progress["next_action"]["code"]=="consider_academic_documents"
+    assert progress["next_action"]["code"]=="inventory_questions"
     services.documents.mark_considered(app["id"],transcript["id"],"Used degree and coursework")
     progress=services.applications.progress(app["id"])
-    assert progress["academic_documents_considered"]==1
     assert progress["next_action"]["code"]=="inventory_questions"
     assert services.documents.usage(app["id"])[0]["document_id"]==transcript["id"]
 

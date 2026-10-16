@@ -141,27 +141,18 @@ def test_readiness_reports_standard_answers_without_touching_capability(services
     assert after["capability"] == capability_before
 
 
-def test_two_standard_answers_clear_a_required_question_apiece_before_the_resume_step(ready_services):
-    """P4's auto-apply gate (coverage == 1.0, approved) is fed by seeded answers."""
+def test_approved_reusable_answers_are_not_silently_filled_on_read(ready_services):
     services = ready_services
     services.questions.seed_defaults()
     _answer_seed(services, "work_authorization", "Yes, I am authorized to work in the United States.")
-    _answer_seed(services, "relocation", "Yes, I am open to relocation.")
-
     app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    services.questions.add(app["id"], PHRASINGS["work_authorization"][1], required_field=True)
-    services.questions.add(app["id"], PHRASINGS["relocation"][1], required_field=True)
+    q = services.questions.add(app["id"], PHRASINGS["work_authorization"][1], required_field=True)
     services.applications.set_questions_reviewed(app["id"])
-
-    step = next_step(services, app["id"])
-
-    assert step["step_id"] == "generate_resume", "both required questions should auto-fill from the seeded bank"
-    questions = services.questions.list(app["id"])
-    assert len(questions) == 2
-    for question in questions:
-        assert question["current_answer"] is not None
-        assert question["current_answer"]["source_label"] == "question_bank:auto"
-        assert question["current_answer"]["approved"] == 1
+    assert next_step(services, app["id"])["step_id"] == "answer_question"
+    assert services.questions.list(app["id"])[0]["answers"] == []
+    bank = services.questions.search_bank(q["question"])[0]
+    answer = services.questions.apply_bank_answer(q["id"], bank["id"])
+    assert answer["approved"] == 0
 
 
 def test_mcp_seed_defaults_round_trips(settings):

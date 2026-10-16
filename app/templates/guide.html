@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}MCP Setup · Jobtron{% endblock %}
+{% block title %}Agent setup · Jobtron{% endblock %}
 {% block head %}<link rel="stylesheet" href="/static/guide.css"><script src="/static/guide.js" defer></script>{% endblock %}
 {% block content %}
 <div class="guide-hero">
@@ -19,7 +19,7 @@ uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button
   <div class="step-grid">
     <article class="guide-card"><b>1</b><h3>Close active clients</h3><p>Close every Codex, OpenCode, or Claude Code session currently using Jobtron so migration starts from a stable source.</p></article>
     <article class="guide-card"><b>2</b><h3>Run setup</h3><p>Run the command above from the Jobtron repository. It detects absolute executable paths and configures each selected client.</p></article>
-    <article class="guide-card"><b>3</b><h3>Restart and verify</h3><p>Start one client, check it with the client-specific command below, then ask your agent to show the Jobtron dashboard.</p></article>
+    <article class="guide-card"><b>3</b><h3>Restart and verify</h3><p>Start one client, check it with the client-specific command below, then ask your agent to show the Jobtron application tracker.</p></article>
   </div>
 </section>
 
@@ -36,17 +36,17 @@ uv run jobtron-setup install --clients codex,opencode,claude</code></pre><button
 <section class="guide-section">
   <div class="section-heading"><span>03</span><div><p class="eyebrow">Open the interface</p><h2>The agent should always give you this link</h2></div></div>
   <div class="command-row"><pre id="dashboard-link"><code>{{ dashboard_url }}</code></pre><button class="copy-button" data-copy-target="dashboard-link">Copy</button></div>
-  <p><a class="button" href="{{ dashboard_url }}">Open the live Jobtron dashboard</a></p>
-  <p class="quiet">The MCP tool <code>ui.show_dashboard</code> returns current applications and this exact frontend URL. Even clients that cannot render MCP Apps inline can open the browser dashboard.</p>
+  <p><a class="button" href="{{ dashboard_url }}">Open the application tracker</a></p>
+  <p class="quiet">The MCP tool <code>ui.show_dashboard</code> returns current applications and this exact frontend URL. Even clients that cannot render MCP Apps inline can open the browser tracker.</p>
 </section>
 
 <section class="guide-section">
   <div class="section-heading"><span>04</span><div><p class="eyebrow">Good prompts</p><h2>Ask any supported agent the same way</h2></div></div>
   <div class="prompt-grid">
-    <article class="prompt-card"><header><span>Open dashboard</span><button class="copy-button" data-copy-target="prompt-dashboard">Copy</button></header><pre id="prompt-dashboard"><code>Use Jobtron to show me the dashboard with the jobs we have applied to. Include the live frontend link.</code></pre></article>
-    <article class="prompt-card"><header><span>Continue work</span><button class="copy-button" data-copy-target="prompt-continue">Copy</button></header><pre id="prompt-continue"><code>Use Jobtron to continue my most urgent application. Report progress and blockers, take the next safe action, and show the refreshed application when finished.</code></pre></article>
-    <article class="prompt-card"><header><span>Evaluate fit</span><button class="copy-button" data-copy-target="prompt-fit">Copy</button></header><pre id="prompt-fit"><code>Use Jobtron to compare this application with my candidate facts, resume, and enabled academic documents. Identify strong matches and honest gaps without changing anything.</code></pre></article>
-    <article class="prompt-card"><header><span>Final audit</span><button class="copy-button" data-copy-target="prompt-audit">Copy</button></header><pre id="prompt-audit"><code>Audit this Jobtron application as a complete package. Report omissions, contradictions, weak evidence, and anything I should review before submitting.</code></pre></article>
+    <article class="prompt-card"><header><span>Open applications</span><button class="copy-button" data-copy-target="prompt-dashboard">Copy</button></header><pre id="prompt-dashboard"><code>Use Jobtron to show my active applications. Include the live frontend link.</code></pre></article>
+    <article class="prompt-card"><header><span>Prepare drafts</span><button class="copy-button" data-copy-target="prompt-continue">Copy</button></header><pre id="prompt-continue"><code>Use Jobtron to prepare answers and a cover letter for this application from my original resume and standard answers. Save unapproved drafts and show every answer for my review.</code></pre></article>
+    <article class="prompt-card"><header><span>Keep a dated copy</span><button class="copy-button" data-copy-target="prompt-fit">Copy</button></header><pre id="prompt-fit"><code>Use Jobtron to save a dated bundle of this application, including the latest answers, cover letter, and original resume. Give me the download link.</code></pre></article>
+    <article class="prompt-card"><header><span>Review answers</span><button class="copy-button" data-copy-target="prompt-audit">Copy</button></header><pre id="prompt-audit"><code>Show every saved answer and the cover letter for this application. Flag missing facts and anything that needs my review. Do not fill or submit an external form.</code></pre></article>
   </div>
 </section>
 

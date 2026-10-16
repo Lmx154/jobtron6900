@@ -1,8 +1,17 @@
 # Jobtron 6900
 
-A local-first, agent-driven job application workspace. SQLite owns structured history, the shared data directory owns uploads, and one MCP server gives Codex, OpenCode, or Claude Code the same tools and content.
+A local application tracker for job information, application answers, and cover letters. Your original resume stays a source document. Jobtron does not tailor resumes, fill employer forms, or submit applications.
 
-The conversation is the control plane. Jobtron's MCP App and browser frontend are review surfaces: the agent presents them after meaningful work or when you ask to see your applications.
+## The workflow
+
+1. Open **Resume & answers**, upload your original resume, and optionally save answers to common questions.
+2. Create an application with the company, role, and job description. Add the actual application questions and confirm the list, including when there are none.
+3. Choose **Prepare agent request** and copy it to your connected AI agent. It drafts or regenerates only the answers and cover letter, using your resume and approved reusable answers. Generation runs in the connected agent, not a separate model service inside the website.
+4. Read and edit every answer and the letter in the application record. Each save creates a version; generated versions are drafts until you explicitly review them. New drafts remain visible even when an older version was approved.
+5. Save a **dated bundle** whenever you want a permanent copy. Generation also asks the agent to bundle its drafts. Download the ZIP with the posting, answers, letter, original resume, review labels, and a JSON snapshot. Bundles use UTC timestamps and preserve their exact contents through later edits.
+6. Set the application **Active** or **Inactive** whenever you choose. Drafting and bundling never change that flag or claim that you submitted anything.
+
+The resume version is pinned when an application is created with a readable active resume, or when its first draft request is prepared. Uploading a newer resume does not silently change existing application sources. Missing personal facts must be supplied by you; the agent is instructed to ask rather than guess.
 
 ## Install
 
@@ -13,55 +22,42 @@ uv sync --extra test
 uv run jobtron-setup install --clients codex,opencode,claude
 ```
 
-The setup command:
+Choose only the clients you use, for example `--clients codex`. Setup preserves unrelated configuration and safely copies legacy repository-local data to the shared platform data directory when needed. Restart configured clients after installation or after updating the app's MCP tools.
 
-- safely copies a legacy repository-local `data/` directory to the platform user data directory when necessary;
-- configures the selected clients at user scope;
-- gives every client the same explicit `JOBTRON_DATA_DIR`;
-- preserves unrelated client configuration; and
-- never deletes the legacy database or application data.
+Ask your agent:
 
-Configure only selected clients with `--clients codex`, `--clients opencode`, or `--clients claude`.
+> Use Jobtron to show my applications and give me the frontend link.
 
-Restart any configured client after installation. Several clients may run at once: each gets its own MCP process, the first one to start hosts the web frontend, and the rest detect it and share the same database. SQLite runs in WAL mode and schema migrations take an exclusive lock, so concurrent starts are safe.
+The default frontend is [http://127.0.0.1:8765/applications](http://127.0.0.1:8765/applications). The stdio server starts it as a detached background process if it is not already running (check with `uv run jobtron status`); it keeps running after the agent session ends. Multiple clients share the same database and frontend.
 
-## Verify
+To reach the web UI yourself, use the `jobtron` command. It runs the UI as its own detached background process, not tied to systemd or any client session, and writes only inside the data directory (its log is `jobtron.log` there):
 
 ```bash
-codex mcp get jobtron6900
-opencode mcp list
-claude mcp get jobtron6900
-uv run jobtron-setup doctor
+uv run jobtron open     # start if needed, then open the browser
+uv run jobtron start    # start in the background
+uv run jobtron status   # running or not, URL, pid, and which agents have Jobtron registered
+uv run jobtron stop     # stop the background UI
 ```
 
-Ask the active agent:
+`JOBTRON_DATA_DIR`, `JOBTRON_HOST`, and `JOBTRON_PORT` apply as usual. If another program holds the port, `jobtron start` says so and exits instead of picking a different port; set `JOBTRON_PORT` to change it.
 
-> Use Jobtron to show me the dashboard with the jobs we have applied to. Include the live frontend link.
+## Existing data
 
-The presentation tool returns [http://127.0.0.1:8765/applications](http://127.0.0.1:8765/applications). The stdio entrypoint hosts this fallback frontend automatically, including for clients that cannot render MCP Apps inline.
+The tracker migration adds the active flag and dated bundles without deleting old records, documents, answers, or submitted snapshots. Existing Rejected, Withdrawn, and Closed applications start inactive; other records start active. Old status values remain stored. Previously saved application documents remain downloadable in each record.
 
-## Shared data and migration
-
-The canonical directory is resolved with `platformdirs` (normally `~/.local/share/jobtron6900` on Linux). Every installed client receives that same path. Before setup migration, Jobtron continues using an existing repository-local `data/app.db` as a compatibility fallback so an update cannot make current applications disappear.
-
-Useful commands:
+The shared directory is resolved with `platformdirs` (normally `~/.local/share/jobtron6900` on Linux). An existing repository-local `data/app.db` remains the fallback until setup migration. Back up `app.db` and `files/` together. Bundle ZIP bytes are stored in SQLite so later source changes cannot alter a saved download.
 
 ```bash
 uv run jobtron-setup status
+uv run jobtron-setup doctor
 uv run jobtron-setup migrate
-uv run jobtron-setup print-config --client opencode
-uv run jobtron-setup uninstall --clients claude
 ```
-
-Migration verifies SQLite integrity, copies through a temporary directory, promotes atomically, refuses to overwrite an existing database, and leaves the source untouched.
 
 ## Development
 
 ```bash
-uv run pytest
-uv run python main.py
+uv run pytest -q
+JOBTRON_DATA_DIR=/tmp/jobtron-dev uv run python main.py
 ```
 
-The standalone development server exposes the frontend and Streamable HTTP MCP endpoint at `/mcp`. Production client configuration uses the guarded `jobtron-mcp` stdio entrypoint.
-
-Back up `app.db` and `files/` together from the resolved shared data directory. Documents, answers, and submitted application snapshots are versioned rather than overwritten.
+Always use a separate `JOBTRON_DATA_DIR` for manual testing. Importing `app.main` does not open or migrate the live database. Tests use temporary directories. The standalone development server also exposes Streamable HTTP MCP at `/mcp`.

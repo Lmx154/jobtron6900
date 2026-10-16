@@ -25,100 +25,24 @@ from typing import Any
 # a step needs a progress statement, not a question. None means the user is
 # genuinely being asked something, so progress()'s own question text is used.
 STEP_MAP: dict[str, tuple[str, str | None, str, str | None]] = {
-    "capture_job_description": (
-        "need_job_description",
-        None,
-        "Say say_to_user word for word, then stop. When the user replies with the posting text, "
-        "call applications.update with that text as job_description, preserving every other field.",
-        None,
-    ),
-    "complete_candidate_setup": (
-        "need_candidate_setup",
-        None,
-        "Say say_to_user word for word, including the URL, then stop. Do not generate a resume, a "
-        "cover letter, or any answer. When the user says they are done, call workflow.next again.",
-        None,
-    ),
-    "consider_academic_documents": (
-        "consider_academic",
-        "documents.mark_considered",
-        "Read each resource_uri listed in next_action, then call documents.mark_considered once per "
-        "document id. Then call workflow.next again.",
-        "Reading your saved academic documents before I write anything.",
-    ),
-    "extract_questions": (
-        "extract_questions",
-        "questions.extract_from_posting",
-        "Call questions.extract_from_posting for this application. If it returns questions, add each "
-        "one with questions.add and then call applications.set_questions_reviewed. If it returns none, "
-        "call workflow.next again and relay what it says.",
-        "Checking the posting for application questions.",
-    ),
-    # D7: this step's wait depends on the client (does it have a browser tool?),
-    # not on server state, so it is a deliberate, documented exception to
-    # "working steps narrate, stopping steps ask" -- it narrates (then_call is
-    # set, waits_for_user reports False) even though the paste fallback inside
-    # you_must may, in practice, leave the agent stopped and waiting.
-    "capture_page_text": (
-        "capture_page_text",
-        "questions.detect_from_text",
-        "If you have a browser tool, open next_action.url, read the page's visible text, and call "
-        "questions.detect_from_text with source='browser'. If you have no browser tool, say say_to_user "
-        "word for word and stop; when the user pastes the page, call questions.detect_from_text with "
-        "source='paste'. Then call workflow.next again.",
-        "Reading the posting page for application questions.",
-    ),
-    "inventory_questions": (
-        "inventory_questions",
-        None,
-        "Say say_to_user word for word, then stop. When the user supplies questions, call "
-        "questions.add once per question, then applications.set_questions_reviewed.",
-        None,
-    ),
-    "answer_required_question": (
-        "answer_question",
-        "question_bank.search",
-        "Call question_bank.search with the question text FIRST. If a match is returned, apply it with "
-        "question_bank.apply. Only if there is no match, draft an answer from the master resume and the "
-        "candidate facts, then call answers.save with approved=false. Invent nothing.",
-        "Answering question {question_number} of {question_total}.",
-    ),
-    "prepare_resume": (
-        "generate_resume",
-        "documents.save",
-        "Read the approved master resume through its resource_uri. Write a tailored resume using ONLY "
-        "facts that appear in that document, in the candidate facts, or in the job description. Then "
-        "call documents.save with document_type='application_resume' and approved=false, and call "
-        "workflow.next again.",
-        "Writing your tailored resume from your master resume.",
-    ),
-    "prepare_cover_letter": (
-        "generate_cover_letter",
-        "documents.save",
-        "Write the cover letter using ONLY facts already in Jobtron. Then call documents.save with "
-        "document_type='cover_letter' and approved=false, and call workflow.next again.",
-        "Writing the cover letter this posting requires.",
-    ),
-    "review_drafts": (
-        "review_drafts",
-        None,
-        "Say say_to_user word for word, including the URL, then stop. When the user approves, call "
-        "applications.approve_drafts with the ids they named, or all=true. Then call workflow.next again.",
-        None,
-    ),
-    "confirm_submission": (
-        "confirm_submission",
-        None,
-        "Say say_to_user word for word, including the URL, then stop. Mark the application Applied only "
-        "after the user confirms they submitted it externally.",
-        None,
-    ),
-    "post_submission_follow_up": (
-        "done",
-        None,
-        "Say say_to_user word for word, including the URL, then stop.",
-        None,
-    ),
+    "capture_job_description": ("need_job_description", None,
+        "Ask for the posting text or retrieve the public posting. Save it with applications.update; never interact with an application form.", None),
+    "complete_candidate_setup": ("need_candidate_setup", None,
+        "Share the setup URL and wait for the user to upload their original resume. Do not generate a resume.", None),
+    "inventory_questions": ("inventory_questions", None,
+        "Ask for the actual application questions. Save each with questions.add. Call applications.set_questions_reviewed only when the user has supplied the complete list or confirmed there are none.", None),
+    "answer_required_question": ("answer_question", "question_bank.search",
+        "Search approved reusable answers. Read applications.get_context and its pinned_resume; read that resume resource if needed. Use ONLY candidate facts in the resume or user-approved answers. A job requirement is not a candidate fact. Ask about unknown facts. Save a new visible answer with answers.save approved=false, respecting choices and character limits. Never auto-approve reused answers. Then call workflow.next.",
+        "Drafting answer {question_number} of {question_total} for your review."),
+    "prepare_cover_letter": ("generate_cover_letter", "documents.save",
+        "Read applications.get_context, including pinned_resume. Write a cover letter using only supported candidate facts and the job description for role context. Never write a resume. Call documents.save with document_type='cover_letter', application_id and approved=false. Call applications.create_bundle to date-stamp the draft package, then workflow.next.",
+        "Drafting your cover letter for review."),
+    "review_drafts": ("review_drafts", None,
+        "Show ui.show_application and its frontend_url so the user can read every draft. Approve only versions the user explicitly approves using applications.approve_drafts. Then call workflow.next.", None),
+    "package_complete": ("done", None,
+        "Share the review URL. If the user requests a bundle, call applications.create_bundle. For regeneration use applications.prepare_drafts. Never submit or change the active flag automatically.", None),
+    "inactive": ("inactive", None,
+        "Share the application URL. Leave the active flag unchanged unless the user requests a change.", None),
 }
 
 # Every step_id the engine can emit. A closed set is assertable; prose is not.

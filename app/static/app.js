@@ -1,62 +1,25 @@
 (() => {
-  const form = document.querySelector("#asset-upload");
-  const input = document.querySelector("#asset-file");
-  if (form && input) {
-    const title = form.querySelector('[name="title"]');
-    const setFile = (file) => {
-      const transfer = new DataTransfer(); transfer.items.add(file); input.files = transfer.files;
-      if (!title.value) title.value = file.name || `Screenshot ${new Date().toLocaleString()}`;
-      form.classList.add("has-file");
-    };
-    document.addEventListener("paste", (event) => {
-      const file = [...(event.clipboardData?.files || [])].find(item => item.type.startsWith("image/"));
-      if (file) { event.preventDefault(); setFile(new File([file], `screenshot-${Date.now()}.png`, {type:file.type})); }
-    });
-    form.addEventListener("dragover", event => { event.preventDefault(); form.classList.add("dragging"); });
-    form.addEventListener("dragleave", () => form.classList.remove("dragging"));
-    form.addEventListener("drop", event => { event.preventDefault(); form.classList.remove("dragging"); if (event.dataTransfer.files[0]) setFile(event.dataTransfer.files[0]); });
-  }
-
-  const dialog = document.querySelector("#autofill-dialog");
-  const wizard = document.querySelector("#autofill-form");
-  const openWizard = document.querySelector("#autofill-open");
-  if (!dialog || !wizard || !openWizard) return;
-
-  const showStep = (name) => {
-    wizard.querySelectorAll("[data-wizard-step]").forEach(step => { step.hidden = step.dataset.wizardStep !== name; });
-    wizard.querySelectorAll(".wizard-error").forEach(error => { error.hidden = true; error.textContent = ""; });
-  };
-  const showError = (step, message) => {
-    const error = wizard.querySelector(`[data-wizard-step="${step}"] .wizard-error`);
-    error.textContent = message; error.hidden = false;
-  };
-
-  openWizard.addEventListener("click", () => { showStep("sources"); dialog.showModal(); });
-  wizard.querySelectorAll("[data-wizard-close]").forEach(button => button.addEventListener("click", () => dialog.close()));
-  wizard.querySelector("[data-wizard-next]").addEventListener("click", () => {
-    if (!wizard.querySelector('[name="sources"]:checked')) showError("sources", "Select at least one source.");
-    else showStep("targets");
-  });
-  wizard.querySelector("[data-wizard-back]").addEventListener("click", () => showStep("sources"));
-  wizard.addEventListener("submit", async (event) => {
+  const form = document.querySelector('[data-draft-form]');
+  if (!form) return;
+  const error = document.querySelector('[data-draft-error]');
+  const result = document.querySelector('[data-draft-result]');
+  const prompt = document.querySelector('#agent-request');
+  form.addEventListener('submit', async event => {
     event.preventDefault();
-    const submit = wizard.querySelector('[type="submit"]');
-    submit.disabled = true;
+    const button = form.querySelector('button');
+    button.disabled = true; error.hidden = true; result.hidden = true;
     try {
-      const response = await fetch(wizard.action, {method: "POST", body: new FormData(wizard)});
+      const response = await fetch(form.action, { method: 'POST', headers: { Accept: 'application/json' } });
       const plan = await response.json();
-      if (!plan.valid) { showError("targets", (plan.errors || ["Complete the required selections."]).join(" ")); return; }
-      wizard.querySelector("#autofill-agent-request").value = plan.agent_prompt;
-      showStep("result");
-    } catch (_) {
-      showError("targets", "The autofill plan could not be prepared. Try again.");
-    } finally {
-      submit.disabled = false;
-    }
+      if (!response.ok || !plan.valid) throw new Error((plan.errors || [plan.detail || 'Could not prepare the request.']).join(' '));
+      prompt.value = plan.agent_prompt; result.hidden = false; prompt.focus();
+    } catch (failure) {
+      error.textContent = failure.message || 'Could not prepare the request. Try again.'; error.hidden = false;
+    } finally { button.disabled = false; }
   });
-  wizard.querySelector("[data-copy-agent-request]").addEventListener("click", async (event) => {
-    const request = wizard.querySelector("#autofill-agent-request");
-    await navigator.clipboard.writeText(request.value);
-    event.currentTarget.textContent = "Copied";
+  document.querySelector('[data-copy-request]').addEventListener('click', async () => {
+    const status = document.querySelector('[data-copy-status]');
+    try { await navigator.clipboard.writeText(prompt.value); status.textContent = 'Copied. Paste this into your connected agent conversation.'; }
+    catch (_) { prompt.focus(); prompt.select(); status.textContent = 'Select and copy the request with your keyboard.'; }
   });
 })();

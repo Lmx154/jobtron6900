@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from app.services.standard_questions import STANDARD_QUESTIONS
 
 from .helpers import redirect, services, templates
+from .applications import call_service
 
 router=APIRouter(prefix="/profile")
 
@@ -19,7 +20,7 @@ def _standard_answers(svc):
 @router.get("")
 def profile(request: Request):
     svc=services(request)
-    return templates(request).TemplateResponse(request,"profile.html",{"profile":svc.candidate.get_profile(),"facts":svc.candidate.get_facts(),"resumes":svc.documents.list(None,"master_resume"),"academic_documents":svc.documents.academic(),"standard_questions":_standard_answers(svc)})
+    return templates(request).TemplateResponse(request,"profile.html",{"profile":svc.candidate.get_profile(),"resumes":svc.documents.list(None,"master_resume"),"standard_questions":_standard_answers(svc)})
 
 
 @router.post("")
@@ -32,9 +33,15 @@ async def update_standard_answers(request: Request):
     svc=services(request); svc.questions.seed_defaults()
     form=await request.form()
     for entry in STANDARD_QUESTIONS:
-        content=str(form.get(f"answer_{entry['key']}","")).strip()
-        if not content: continue
-        bank_entry=svc.questions.get_bank_entry_by_question(entry["canonical_question"])
+        key = f"answer_{entry['key']}"
+        if key not in form:
+            continue
+        content = str(form[key]).strip()
+        bank_entry = svc.questions.get_bank_entry_by_question(entry["canonical_question"])
+        if not content:
+            if bank_entry:
+                svc.questions.clear_bank_entry(bank_entry["id"])
+            continue
         svc.questions.save_bank_entry(entry["canonical_question"],content,entry["keywords"],approved=True,bank_entry_id=bank_entry["id"] if bank_entry else None)
     return redirect("/profile#standard-answers")
 
@@ -51,8 +58,11 @@ async def update_fact(fact_id:int,request:Request):
 
 @router.post("/resume")
 async def upload_resume(request: Request):
-    form=await request.form(); upload=form["file"]; content=await upload.read()
-    services(request).documents.save("master_resume",form.get("title") or upload.filename,filename=upload.filename,content=content,text_content=form.get("text_content",""),approved="approved" in form)
+    form=await request.form(); upload=form.get("file")
+    if not getattr(upload,"filename",None): raise HTTPException(422,"Choose a resume file")
+    content=await upload.read()
+    if not content: raise HTTPException(422,"Resume file is empty")
+    call_service(services(request).documents.save,"master_resume",form.get("title") or upload.filename,filename=upload.filename,content=content,text_content=form.get("text_content",""),approved="approved" in form)
     return redirect("/profile")
 
 
@@ -71,7 +81,7 @@ async def set_academic_document_use(document_id:int,request:Request):
 
 @router.get("/academic-documents/{document_id}")
 def download_academic_document(document_id:int,request:Request):
-    svc=services(request); document=svc.documents.get(document_id)
+    svc=services(request); document=call_service(svc.documents.get,document_id)
     if document["application_id"] is not None or document["document_type"] not in svc.documents.ACADEMIC_TYPES: return Response(status_code=404)
     if document["file_path"]: return FileResponse(svc.storage.path(document["file_path"]),filename=document["title"])
     return Response(document["text_content"],media_type="text/plain")
@@ -79,7 +89,7 @@ def download_academic_document(document_id:int,request:Request):
 
 @router.get("/resume/{document_id}")
 def download_resume(document_id:int,request:Request):
-    svc=services(request); document=svc.documents.get(document_id)
-    if document["application_id"] is not None: return Response(status_code=404)
+    svc=services(request); document=call_service(svc.documents.get,document_id)
+    if document["application_id"] is not None or document["document_type"] != "master_resume": return Response(status_code=404)
     if document["file_path"]: return FileResponse(svc.storage.path(document["file_path"]),filename=document["title"])
     return Response(document["text_content"],media_type="text/plain")

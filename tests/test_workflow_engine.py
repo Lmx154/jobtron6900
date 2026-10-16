@@ -1,24 +1,10 @@
-"""Phase 2: the engine must emit exactly one step, from a closed set, deterministically."""
+"""The tracker workflow drafts answers and a letter, then stops for review."""
 
 import asyncio
-
 import pytest
-
 from app.mcp.server import build_server
 from app.services.core import ApplicationService, NotFoundError
 from app.services.workflow import STEP_IDS, STEP_MAP, find_by_url, next_step
-
-
-def test_every_progress_code_maps_to_a_step():
-    """No next_action code may fall through to a default the agent cannot act on."""
-    known = {
-        "capture_job_description", "complete_candidate_setup", "consider_academic_documents",
-        "extract_questions", "capture_page_text", "inventory_questions", "answer_required_question",
-        "prepare_resume", "prepare_cover_letter", "review_drafts", "confirm_submission",
-        "post_submission_follow_up",
-    }
-    assert set(STEP_MAP) == known
-
 
 def test_then_call_is_always_null_or_a_real_tool():
     allowed = {
@@ -76,65 +62,6 @@ def test_the_setup_gate_is_the_first_thing_after_a_draft(services):
     assert "/profile" in step["say_to_user"]
 
 
-def test_every_step_that_stops_hands_over_the_link(ready_services):
-    """'Always send the link' is data, not memory: it is inside the text to be said."""
-    services = ready_services
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    advance = [
-        lambda: services.applications.set_questions_reviewed(app["id"]),
-        lambda: services.documents.save("application_resume", "T", app["id"], "x", approved=True),
-        lambda: services.applications.set_status(app["id"], "Applied"),
-    ]
-    seen = []
-    for step_forward in advance + [None]:
-        step = next_step(services, app["id"])
-        seen.append(step["step_id"])
-        assert step["must_share_url"] is True
-        if step["waits_for_user"]:
-            assert step["frontend_url"] in step["say_to_user"], step["step_id"]
-        if step_forward:
-            step_forward()
-    assert "confirm_submission" in seen
-
-
-def test_a_working_step_reports_progress_rather_than_asking(ready_services):
-    services = ready_services
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    services.applications.set_questions_reviewed(app["id"])
-    step = next_step(services, app["id"])
-    assert step["step_id"] == "generate_resume"
-    assert step["waits_for_user"] is False
-    assert step["say_to_user"] == "Writing your tailored resume from your master resume."
-
-
-def test_the_application_question_is_never_read_back_to_the_user(ready_services):
-    """say_to_user is addressed to the human; the question text is work input."""
-    services = ready_services
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    services.questions.add(app["id"], "Why do you want to work at Boeing?", required_field=True)
-    services.applications.set_questions_reviewed(app["id"])
-    step = next_step(services, app["id"])
-    assert step["step_id"] == "answer_question"
-    assert "Why do you want to work at Boeing?" not in step["say_to_user"]
-    assert step["say_to_user"] == "Answering question 1 of 1."
-
-
-def test_the_full_sequence_advances_one_step_at_a_time(ready_services):
-    services = ready_services
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-
-    assert next_step(services, app["id"])["step_id"] == "inventory_questions"
-    services.applications.set_questions_reviewed(app["id"])
-
-    assert next_step(services, app["id"])["step_id"] == "generate_resume"
-    services.documents.save("application_resume", "Tailored", app["id"], "Text", approved=True)
-
-    step = next_step(services, app["id"])
-    assert step["step_id"] == "confirm_submission"
-    assert step["ready_to_apply"] is True
-    assert step["percent_complete"] == 100
-
-
 def test_a_missing_job_description_is_asked_for_first(services):
     app = services.applications.create("Boeing", "GNC Engineer", url="https://jobs.boeing.com/x")
     step = next_step(services, app["id"])
@@ -153,39 +80,6 @@ def test_find_by_url_ignores_trailing_slashes_and_blanks(services):
     services.applications.create("Boeing", "GNC", url="https://x.test/job")
     assert find_by_url(services, "https://x.test/job/") is not None
     assert find_by_url(services, "https://other.test/job") is None
-
-
-# Phase 4 · D3: an answer the user already approved is not approved again.
-
-AUTHORIZATION = "Are you legally authorized to work in the United States?"
-
-
-def _application_with_question(services, question_text):
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    question = services.questions.add(app["id"], question_text, required_field=True)
-    services.applications.set_questions_reviewed(app["id"])
-    return app, question
-
-
-def test_a_fully_covered_approved_bank_answer_never_reaches_the_agent(ready_services):
-    services = ready_services
-    entry = services.questions.save_bank_entry(
-        AUTHORIZATION, "Yes, I am authorized to work in the United States.", approved=True
-    )
-    app, question = _application_with_question(services, AUTHORIZATION)
-
-    step = next_step(services, app["id"])
-
-    assert step["step_id"] == "generate_resume", "the question was answered from the bank, so it is gone"
-    answer = services.questions.list(app["id"])[0]["current_answer"]
-    assert answer["source_label"] == "question_bank:auto"
-    assert answer["approved"] == 1
-    assert answer["content"] == entry["answer"]
-    assert services.questions.search_bank(AUTHORIZATION)[0]["usage_count"] == entry["usage_count"] + 1
-    # Idempotent: asking again neither re-applies nor re-counts.
-    assert next_step(services, app["id"])["step_id"] == "generate_resume"
-    assert len(services.questions.list(app["id"])[0]["answers"]) == 1
-    assert services.questions.search_bank(AUTHORIZATION)[0]["usage_count"] == 1
 
 
 def test_an_unapproved_bank_entry_is_never_auto_applied(ready_services):
@@ -214,9 +108,6 @@ def test_a_partly_covered_bank_entry_is_never_auto_applied(ready_services):
     assert services.questions.list(app["id"])[0]["answers"] == []
 
 
-# Phase 4 · D4: every draft is reviewed at one stop, not one stop per draft.
-
-
 def _drafted_application(services):
     """All required answers drafted, resume and cover letter drafted, nothing approved."""
     app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
@@ -225,53 +116,6 @@ def _drafted_application(services):
     services.applications.set_questions_reviewed(app["id"])
     services.questions.save_answer(question["id"], "Because of the mission.", "model", approved=False)
     return app, question
-
-
-def test_the_drafting_run_stops_only_once_at_review_drafts(ready_services):
-    services = ready_services
-    app, question = _drafted_application(services)
-
-    seen = []
-    step = next_step(services, app["id"])
-    seen.append(step["step_id"])
-    assert step["waits_for_user"] is False
-    resume = services.documents.save("application_resume", "Tailored", app["id"], "Resume", approved=False)
-
-    step = next_step(services, app["id"])
-    seen.append(step["step_id"])
-    assert step["waits_for_user"] is False
-    letter = services.documents.save("cover_letter", "Letter", app["id"], "Letter", approved=False)
-
-    step = next_step(services, app["id"])
-    assert seen == ["generate_resume", "generate_cover_letter"], "no stop between the two drafts"
-    assert step["step_id"] == "review_drafts"
-    assert step["waits_for_user"] is True
-    assert step["then_call"] is None
-    assert {(item["kind"], item["id"]) for item in step["pending"]} == {
-        ("answer", services.questions.list(app["id"])[0]["answers"][0]["id"]),
-        ("document", resume["id"]),
-        ("document", letter["id"]),
-    }
-    assert "1 answer, the tailored resume and the cover letter are drafted." in step["say_to_user"]
-    assert step["frontend_url"] in step["say_to_user"]
-
-
-def test_approving_every_draft_goes_straight_to_confirm_submission(ready_services):
-    services = ready_services
-    app, question = _drafted_application(services)
-    services.documents.save("application_resume", "Tailored", app["id"], "Resume", approved=False)
-    services.documents.save("cover_letter", "Letter", app["id"], "Letter", approved=False)
-    assert next_step(services, app["id"])["step_id"] == "review_drafts"
-
-    result = services.applications.approve_drafts(app["id"], all=True)
-
-    assert len(result["approved_answers"]) == 1
-    assert len(result["approved_documents"]) == 2
-    assert result["pending"] == []
-    step = next_step(services, app["id"])
-    assert step["step_id"] == "confirm_submission"
-    assert step["percent_complete"] == 100
-    assert step["ready_to_apply"] is True
 
 
 def test_a_partial_approval_leaves_review_drafts_with_the_rest(ready_services):
@@ -308,84 +152,12 @@ def test_approve_drafts_refuses_an_id_from_another_application(ready_services):
     assert next_step(services, app["id"])["step_id"] == "review_drafts"
 
 
-def test_an_applied_application_is_never_asked_for_questions_or_drafts_again(ready_services):
-    """Applied ends the build loop; the unfinished items stay visible as status, not as gates."""
-    services = ready_services
-    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
-    services.questions.add(app["id"], "Why do you want to work at Boeing?", required_field=True)
-    services.applications.set_questions_reviewed(app["id"])
-    services.documents.save("application_resume", "Tailored", app["id"], "Resume", approved=False)
-    services.applications.set_status(app["id"], "Applied")
-
-    step = next_step(services, app["id"])
-
-    assert step["step_id"] == "done"
-    assert step["waits_for_user"] is True
-    progress = services.applications.progress(app["id"])
-    assert progress["next_action"]["code"] == "post_submission_follow_up"
-    assert progress["percent_complete"] < 100
-    assert progress["ready_to_apply"] is False
-    assert "Tailored resume approved" in progress["blocking_items"]
-    assert "Required questions answered" in progress["blocking_items"]
-    assert services.questions.list(app["id"])[0]["answers"] == [], "nothing is written after Applied"
-
-
-# Phase 5 · D7: page capture through the agent's own browser, never the server's.
-
-
 def _application_with_a_failed_fetch(services, status="blocked", note="The site refused the request (HTTP 403)."):
     app = services.applications.create(
         "Boeing", "GNC Engineer", url="https://jobs.boeing.com/job/1", job_description="Build GNC"
     )
     services.applications.record_question_extraction(app["id"], status, note)
     return app
-
-
-def test_a_blocked_extraction_status_routes_to_capture_page_text_not_inventory_questions(ready_services):
-    services = ready_services
-    app = _application_with_a_failed_fetch(services)
-
-    step = next_step(services, app["id"])
-
-    assert step["step_id"] == "capture_page_text"
-    assert step["then_call"] == "questions.detect_from_text"
-    assert step["waits_for_user"] is False
-
-
-def test_after_detect_from_text_finds_questions_capture_page_text_does_not_recur(ready_services):
-    services = ready_services
-    app = _application_with_a_failed_fetch(services)
-    assert next_step(services, app["id"])["step_id"] == "capture_page_text"
-
-    result = services.questions.detect_from_text(
-        app["id"], "Why do you want to work here?\nDesign and validate GNC systems.", "browser"
-    )
-    assert result["count"] == 1
-    assert result["extraction_status"] == "ok"
-    for question_text in result["detected_questions"]:
-        services.questions.add(app["id"], question_text, required_field=True)
-    services.applications.set_questions_reviewed(app["id"])
-
-    step = next_step(services, app["id"])
-    assert step["step_id"] != "capture_page_text"
-    assert step["step_id"] == "answer_question", "the added question flows into the existing answer step"
-
-
-def test_after_detect_from_text_finds_nothing_the_next_step_is_inventory_questions(ready_services):
-    services = ready_services
-    app = _application_with_a_failed_fetch(
-        services, status="empty", note="The page rendered its content with JavaScript."
-    )
-    assert next_step(services, app["id"])["step_id"] == "capture_page_text"
-
-    result = services.questions.detect_from_text(
-        app["id"], "Just some plain page text with no questions anywhere on it.", "paste"
-    )
-    assert result["count"] == 0
-    assert result["extraction_status"] == "ok", "a zero-question paste still records a clean extraction"
-
-    step = next_step(services, app["id"])
-    assert step["step_id"] == "inventory_questions"
 
 
 def test_retry_true_clears_a_recorded_status_and_refetches(ready_services, monkeypatch):
@@ -435,3 +207,42 @@ def test_retry_false_with_a_recorded_status_is_cached_and_never_touches_the_netw
     assert result.structured_content["cached"] is True
     assert result.structured_content["status"] == "blocked"
     assert result.structured_content["detected_questions"] == []
+
+
+
+AUTHORIZATION = "Are you legally authorized to work in the United States?"
+
+
+def _application_with_question(services, question_text):
+    app = services.applications.create("Boeing", "GNC Engineer", job_description="Build GNC")
+    question = services.questions.add(app["id"], question_text, required_field=True)
+    services.applications.set_questions_reviewed(app["id"])
+    return app, question
+
+
+def test_full_workflow_stops_for_review_and_never_generates_a_resume(ready_services):
+    svc = ready_services
+    app = svc.applications.create("Acme", "Engineer", job_description="Build systems")
+    assert next_step(svc, app["id"])["step_id"] == "inventory_questions"
+    q = svc.questions.add(app["id"], "Why this role?", required_field=False)
+    svc.applications.set_questions_reviewed(app["id"])
+    assert next_step(svc, app["id"])["step_id"] == "answer_question"
+    svc.questions.save_answer(q["id"], "I enjoy systems engineering.", approved=False)
+    assert next_step(svc, app["id"])["step_id"] == "generate_cover_letter"
+    svc.documents.save("cover_letter", "Letter", app["id"], "My letter", approved=False)
+    review = next_step(svc, app["id"])
+    assert review["step_id"] == "review_drafts"
+    assert review["then_call"] is None
+    assert review["frontend_url"] in review["say_to_user"]
+    assert len(review["pending"]) == 2
+    svc.applications.approve_drafts(app["id"], all=True)
+    assert next_step(svc, app["id"])["step_id"] == "done"
+    assert not svc.documents.list(app["id"], "application_resume")
+    svc.questions.save_answer(q["id"], "A revised draft.")
+    assert next_step(svc, app["id"])["step_id"] == "review_drafts"
+    svc.applications.set_active(app["id"], False)
+    assert next_step(svc, app["id"])["step_id"] == "inactive"
+
+
+def test_every_progress_code_maps_to_current_scope():
+    assert set(STEP_MAP) == {"capture_job_description", "complete_candidate_setup", "inventory_questions", "answer_required_question", "prepare_cover_letter", "review_drafts", "package_complete", "inactive"}

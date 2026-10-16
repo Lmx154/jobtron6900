@@ -10,7 +10,7 @@ def test_empty_candidate_is_draft_only(services):
     assert readiness["master_resume_available"] is False
     assert list(readiness["missing_profile_fields"]) == list(REQUIRED_PROFILE_FIELDS)
     assert readiness["must_share_url"] is True
-    assert "master resume" in readiness["say_to_user"]
+    assert "original resume" in readiness["say_to_user"]
     assert readiness["setup_url"] in readiness["say_to_user"]
 
 
@@ -21,7 +21,7 @@ def test_capability_climbs_as_each_piece_lands(services):
         name="Ada", email="ada@example.com", phone="555-0100", location="Seal Beach, CA"
     )
     partial = services.candidate.readiness()
-    assert partial["capability"] == "partial"
+    assert partial["capability"] == "draft_only"
     assert partial["profile_complete"] is True
     assert partial["blocked_by"] == ["master_resume"]
 
@@ -40,7 +40,7 @@ def test_unapproved_master_resume_does_not_satisfy_the_gate(services):
     readiness = services.candidate.readiness()
     assert readiness["master_resume_available"] is False
     assert readiness["master_resume_count"] == 1
-    assert readiness["capability"] == "partial"
+    assert readiness["capability"] == "draft_only"
 
 
 def test_whitespace_only_profile_field_is_not_complete(services):
@@ -80,12 +80,10 @@ def test_progress_reports_the_gate_and_keeps_the_draft(services):
     assert app["status"] == "Draft"
     assert progress["capability"] == "draft_only"
     assert progress["ready_to_apply"] is False
-    assert [check["key"] for check in progress["checks"]][:2] == ["candidate_profile", "master_resume"]
+    assert [check["key"] for check in progress["checks"]][:2] == ["master_resume", "job_description"]
     assert progress["next_action"]["code"] == "complete_candidate_setup"
 
     question = progress["next_action"]["question"]
-    assert "Boeing" in question
-    assert "Guidance Navigation & Control Engineer" in question
     assert "master resume" in question
     assert "/profile" in question
 

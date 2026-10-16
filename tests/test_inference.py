@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from app.db import Database
+from app.db import Database, SCHEMA, MIGRATIONS
 from app.main import create_app
 from app.services import Services
 from app.services.posting import infer_cover_letter_required
@@ -95,10 +95,12 @@ def test_detect_from_text_stores_a_job_description_that_also_gets_inferred(servi
 
 def test_migration_6_on_a_v5_database_leaves_existing_rows_undecided(tmp_path):
     path = tmp_path / "app.db"
-    Database(path).initialize()  # lands at the latest version, including migration 6
-
     con = sqlite3.connect(path)
-    con.execute("ALTER TABLE applications DROP COLUMN cover_letter_required_source")
+    con.row_factory = sqlite3.Row
+    con.executescript(SCHEMA)
+    for version, migrate in MIGRATIONS:
+        if version <= 5:
+            migrate(con)
     con.execute("PRAGMA user_version = 5")
     con.execute("INSERT OR IGNORE INTO companies(name) VALUES('Boeing')")
     company_id = con.execute("SELECT id FROM companies WHERE name='Boeing'").fetchone()[0]
@@ -139,7 +141,8 @@ def test_progress_check_label_names_an_inferred_requirement(services):
     app = services.applications.create("Acme", "Engineer", job_description="A cover letter is required.")
     progress = services.applications.progress(app["id"])
     check = next(item for item in progress["checks"] if item["key"] == "cover_letter")
-    assert "inferred from posting" in check["label"]
+    assert check["label"] == "Cover letter reviewed"
+    assert check["required"] is True
 
 
 def test_progress_check_label_names_a_user_set_requirement(services):
@@ -147,25 +150,14 @@ def test_progress_check_label_names_a_user_set_requirement(services):
     services.applications.update(app["id"], cover_letter_required=True)
     progress = services.applications.progress(app["id"])
     check = next(item for item in progress["checks"] if item["key"] == "cover_letter")
-    assert check["label"] == "Cover letter (required)"
+    assert check["label"] == "Cover letter reviewed"
 
 
 # ------------------------------------------------------------------------ MCP
 
 
-def test_mcp_set_requirements_marks_the_source_user(settings):
+def test_mcp_no_longer_requires_material_configuration(settings):
     app = create_app(settings)
-    application = app.state.services.applications.create("Acme", "Engineer", job_description="Build things")
-
-    result = asyncio.run(
-        app.state.mcp.call_tool(
-            "applications.set_requirements", {"application_id": application["id"], "cover_letter_required": True}
-        )
-    )
-
-    stored = app.state.services.applications.get(application["id"])
-    assert stored["cover_letter_required"] == 1
-    assert stored["cover_letter_required_source"] == "user"
-    progress = json.loads(result.content[0].text)
-    check = next(item for item in progress["checks"] if item["key"] == "cover_letter")
-    assert check["label"] == "Cover letter (required)"
+    names = {tool.name for tool in asyncio.run(app.state.mcp.list_tools())}
+    assert "applications.set_requirements" not in names
+    assert "applications.prepare_drafts" in names

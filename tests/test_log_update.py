@@ -146,52 +146,19 @@ def test_due_follow_up_reminder_is_resolved_by_a_later_log_update(ready_services
 
 # --------------------------------------------------------------------------- MCP
 
-def test_mcp_applications_log_update_round_trips(settings):
+def test_mcp_uses_explicit_active_flag_instead_of_log_update(settings):
     app = create_app(settings)
-    application = app.state.services.applications.create("Boeing", "GNC Engineer")
-
-    result = asyncio.run(
-        app.state.mcp.call_tool(
-            "applications.log_update",
-            {
-                "application_id": application["id"],
-                "event_type": "Recruiter Contact",
-                "occurred_at": "2026-09-08",
-                "status": "Interviewing",
-                "add_tags": ["phone-screen"],
-                "contact": {"name": "Jane Doe", "role": "Recruiter", "email": "jane@example.com", "phone": "555-1234"},
-            },
-        )
-    )
-    payload = json.loads(result.content[0].text)
-    assert payload["status_changed"] is True
-    assert payload["application"]["status"] == "Interviewing"
-    assert payload["application"]["tags"] == "phone-screen"
-    assert payload["event"]["event_type"] == "Recruiter Contact"
-
-    contacts = app.state.services.applications.get_context(application["id"])["contacts"]
-    assert contacts[0]["email"] == "jane@example.com"
+    names = {tool.name for tool in asyncio.run(app.state.mcp.list_tools())}
+    assert "applications.log_update" not in names
+    assert "applications.set_active" in names
 
 
-def test_mcp_applications_log_update_refuses_applied_with_refused_dict(settings):
+def test_mcp_active_flag_never_claims_submission(settings):
     app = create_app(settings)
-    application = app.state.services.applications.create("Boeing", "GNC Engineer")
-    events_before = len(app.state.services.events.list(application["id"]))
-
-    result = asyncio.run(
-        app.state.mcp.call_tool(
-            "applications.log_update",
-            {
-                "application_id": application["id"],
-                "event_type": "Submitted",
-                "occurred_at": "2026-09-08",
-                "status": "Applied",
-            },
-        )
-    )
-    payload = json.loads(result.content[0].text)
-    assert payload["refused"] is True
-    assert "confirm" in payload["say_to_user"]
-
-    events_after = len(app.state.services.events.list(application["id"]))
-    assert events_after == events_before
+    svc = app.state.services
+    application = svc.applications.create("Acme", "Engineer")
+    result = asyncio.run(app.state.mcp.call_tool("applications.set_active", {"application_id":application["id"], "active":False}))
+    assert not result.is_error
+    stored = svc.applications.get(application["id"])
+    assert stored["active"] == 0
+    assert stored["applied_at"] is None

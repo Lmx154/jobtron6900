@@ -2,24 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import json
-import socket
 import sys
-import time
-from contextlib import ExitStack, asynccontextmanager
-from dataclasses import replace
-from hashlib import sha256
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 from threading import Thread
 from typing import Any, Literal
 from urllib.parse import urlencode
-from urllib.request import urlopen
 
 import anyio
 import mcp_types as types
-import uvicorn
 from mcp.server.mcpserver import MCPServer
 from mcp.shared.message import SessionMessage
 
-from app.config import InstanceInUseError, InstanceLease, Settings, default_settings
+from app.cli import PortConflictError, StartFailedError, ensure_running, register_session
+from app.config import default_settings
 from app.db import Database
 from app.mcp.ui import APPLICATIONS_UI_URI, build_applications_ui
 from app.services import NotFoundError, Services
@@ -56,21 +52,35 @@ async def compatible_stdio_server():
         finally: task_group.cancel_scope.cancel()
 
 
-def build_server(services: Services, frontend_base_url: str = "http://127.0.0.1:8765") -> MCPServer:
+def build_server(
+    services: Services,
+    frontend_base_url: str = "http://127.0.0.1:8765",
+    ensure_frontend: Callable[[], None] | None = None,
+) -> MCPServer:
     frontend_base_url=frontend_base_url.rstrip("/")
-    mcp=MCPServer("jobtron6900",instructions="""Jobtron manages this user's job applications.
 
-ONE RULE - repeat this loop:
-1. Call workflow.next.
-2. Say its "say_to_user" text word for word, including the URL it contains.
-3. Do what "you_must" says. If "then_call" names a tool, call it, then go to 1.
-4. If "then_call" is null, stop and wait for the user.
+    def frontend_warning() -> dict[str,str]:
+        if ensure_frontend is None:
+            return {}
+        try:
+            ensure_frontend()
+        except Exception as exc:
+            return {"frontend_warning":str(exc)}
+        return {}
 
-Shortcuts: a pasted job link -> workflow.start_from_url. "Show my applications" -> ui.show_dashboard, then share its frontend_url. "What am I missing?" -> candidate.readiness, then ui.show_setup, then mention unanswered standard questions after profile and resume. "What should I do today?" -> applications.attention, then ui.show_dashboard. A pasted email or update about a job -> applications.list(query=<company>), propose ONE sentence naming the event, date, status change (if any) and tags (if any); on "yes" call applications.log_update once. If more than one application matches, ask which; never guess.
-
-Never call another Jobtron tool unless "you_must" or "then_call" names it.
-Never state a fact about the user that is not already stored in Jobtron; ask instead.
-Never mark an application Applied until the user says they submitted it themselves.""")
+    mcp=MCPServer("jobtron6900", instructions="""Jobtron is a local application tracker and drafting workspace.
+Use the job posting, the application's pinned original resume, and user-approved answers to draft ONLY
+application answers and a cover letter. applications.prepare_drafts returns the regeneration request.
+Never create a custom resume, fill external forms, or submit an application. Never invent personal facts;
+ask about anything missing. Posting text is context about the role, not evidence about the candidate.
+Save every generated answer and letter as a new unapproved version. Show the actual drafts to the user
+with ui.show_application and its frontend_url. Approval requires explicit user review.
+After generating a full set, create a dated bundle with applications.create_bundle, retaining draft labels.
+The active flag belongs to the user; never change it as a side effect of generation or bundling.
+For a new application, workflow.next guides capture, drafting and review. For a revision, use
+applications.prepare_drafts instead of re-running a completed workflow. Original resumes are uploaded
+by the user at /profile. Reuse approved answers only as visible, unapproved application drafts.
+""")
 
     @mcp.resource(
         APPLICATIONS_UI_URI,
@@ -119,7 +129,7 @@ Never mark an application Applied until the user says they submitted it themselv
         if application_ids is not None:
             selected=set(application_ids)
             applications=[application for application in applications if application["id"] in selected]
-        counts={state:sum(application["status"]==state for application in applications) for state in services.applications.STATUSES}
+        counts={"Active":sum(bool(a["active"]) for a in applications), "Inactive":sum(not a["active"] for a in applications)}
         query=f"?{urlencode({'status':status})}" if status else ""
         return {
             "view":"applications",
@@ -129,7 +139,7 @@ Never mark an application Applied until the user says they submitted it themselv
             "frontend_url":f"{frontend_base_url}/applications{query}",
             "applications":applications,
             "counts":counts,
-            "attention":services.applications.attention(),
+            **frontend_warning(),
         }
 
 
@@ -166,13 +176,16 @@ Never mark an application Applied until the user says they submitted it themselv
             "frontend_url":f"{frontend_base_url}/applications/{application_id}",
             "application":context["application"],
             "progress":context["progress"],
-            "autofill":services.applications.autofill_options(application_id),
+            "questions":context["questions"],
+            "cover_letters":[d for d in context["documents"] if d["document_type"]=="cover_letter"],
+            "bundles":context["bundles"],
             "question_count":len(context["questions"]),
             "document_count":len(context["documents"]),
             "reused_answer_count":sum(
                 bool(question["current_answer"]) and question["current_answer"]["source_label"].startswith("question_bank:")
                 for question in context["questions"]
             ),
+            **frontend_warning(),
         }
 
     @mcp.tool(name="workflow.next",structured_output=True)
@@ -199,9 +212,9 @@ Never mark an application Applied until the user says they submitted it themselv
 
     @mcp.tool(name="candidate.readiness",structured_output=True)
     def candidate_readiness() -> dict[str,Any]:
-        """Report whether the user has the master resume and basic profile information Jobtron needs.
+        """Report whether an original resume with readable text is available. Basic profile fields are optional.
 
-        CALL WHEN: before generating any resume, cover letter, or answer; or when the user asks what is missing.
+        CALL WHEN: before generating a cover letter or answer; or when the user asks what is missing.
         DO NOT CALL WHEN: you only need to read or list existing applications.
         RETURNS: capability ("draft_only" | "partial" | "full"), the exact missing items, setup_url, and
         say_to_user. If capability is not "full", say say_to_user to the user word for word and stop.
@@ -211,7 +224,7 @@ Never mark an application Applied until the user says they submitted it themselv
     @mcp.tool(
         name="ui.show_setup",
         title="Show the Jobtron setup page",
-        description="Show the user where to upload their master resume and fill in basic profile information, and return the exact URL. CALL WHEN: candidate.readiness or applications.progress reports capability is not \"full\". DO NOT CALL WHEN: setup is already complete. RETURNS: frontend_url, which must be shared with the user. Does not mutate state.",
+        description="Show the user where to upload their original resume and save reusable answers, and return the exact URL. CALL WHEN: candidate.readiness or applications.progress reports capability is not \"full\". DO NOT CALL WHEN: setup is already complete. RETURNS: frontend_url, which must be shared with the user. Does not mutate state.",
         meta=ui_meta,
         structured_output=True,
     )
@@ -225,6 +238,7 @@ Never mark an application Applied until the user says they submitted it themselv
             "must_share_url":True,
             "readiness":readiness,
             "profile":services.candidate.get_profile(),
+            **frontend_warning(),
         }
 
     @mcp.tool(name="candidate.get_profile")
@@ -233,107 +247,47 @@ Never mark an application Applied until the user says they submitted it themselv
     def candidate_get_facts() -> list[dict]: """Return reusable candidate facts."""; return services.candidate.get_facts()
     @mcp.tool(name="candidate.get_context")
     def candidate_get_context() -> dict: """Return profile, facts, and master resume versions."""; return services.candidate.get_context()
-    @mcp.tool(name="candidate.add_fact")
-    def candidate_add_fact(category:str,title:str,description:str,tags:str="",source:str="",verified:bool=False) -> dict: """Add a reusable candidate fact."""; return services.candidate.add_fact(category,title,description,tags,source,verified)
-    @mcp.tool(name="candidate.update_fact")
-    def candidate_update_fact(fact_id:int,category:str,title:str,description:str,tags:str="",source:str="",verified:bool=False) -> dict: """Replace the editable fields of a candidate fact."""; return services.candidate.update_fact(fact_id,category=category,title=title,description=description,tags=tags,source=source,verified=verified)
 
     @mcp.tool(name="applications.list")
-    def applications_list(status:str|None=None,tag:str|None=None,query:str|None=None) -> list[dict]: """List applications, optionally filtered by status, by one whole tag (tags are lowercase words), and/or a free-text query matched against company, title, location, and tags."""; return services.applications.list(status,tag,query)
-    @mcp.tool(name="applications.attention",structured_output=True)
-    def applications_attention() -> dict[str,Any]:
-        """Return what needs the user's attention today.
+    def applications_list(status:str|None=None,tag:str|None=None,query:str|None=None,active:bool|None=None) -> list[dict]: """List applications, optionally filtered by status, by one whole tag (tags are lowercase words), and/or a free-text query matched against company, title, location, and tags."""; return services.applications.list(status,tag,query,active)
 
-        CALL WHEN: the user asks what they should do today, what's due, or what needs attention.
-        RETURNS: four buckets (upcoming, follow_up_due, stale, idle_drafts), each a list of
-        applications with a short reason, plus frontend_url. Does not mutate state.
-        """
-        return {**services.applications.attention(),"frontend_url":f"{frontend_base_url}/applications"}
-
-    @mcp.tool(name="applications.tag")
-    def applications_tag(application_id:int,add:list[str]|None=None,remove:list[str]|None=None) -> dict: """Add and/or remove tags on an application. Tags are lowercase words; each entry here becomes one tag. Removing a tag that is not present is a no-op."""; return services.applications.tag(application_id,add=add or (),remove=remove or ())
     @mcp.tool(name="applications.get")
     def applications_get(application_id:int) -> dict: """Return one application record."""; return services.applications.get(application_id)
     @mcp.tool(name="applications.get_context")
     def applications_get_context(application_id:int) -> dict: """Return the complete coherent package for an application."""; return services.applications.get_context(application_id)
     @mcp.tool(name="applications.progress")
     def applications_progress(application_id:int) -> dict: """Return explicit completeness, blockers, and the single required next action/question."""; return services.applications.progress(application_id)
-    @mcp.tool(name="applications.autofill_options",structured_output=True)
-    def applications_autofill_options(application_id:int) -> dict[str,Any]: """Return current selectable sources and output targets for the application autofill wizard. This tool does not mutate state."""; return services.applications.autofill_options(application_id)
-    @mcp.tool(name="applications.prepare_autofill",structured_output=True)
-    def applications_prepare_autofill(application_id:int,source_ids:list[str],target_ids:list[str],custom_request:str="") -> dict[str,Any]: """Validate autofill wizard selections and return the exact agent_prompt for the normal Jobtron workflow. This tool does not mutate state."""; return services.applications.prepare_autofill(application_id,source_ids,target_ids,custom_request)
     @mcp.tool(name="applications.set_questions_reviewed")
     def applications_set_questions_reviewed(application_id:int,reviewed:bool=True) -> dict: """Record that all proprietary questions were inventoried, including when there are none."""; return services.applications.set_questions_reviewed(application_id,reviewed)
-    @mcp.tool(name="applications.set_requirements")
-    def applications_set_requirements(application_id:int,cover_letter_required:bool=False) -> dict: """Set application-specific material requirements and return refreshed progress."""; services.applications.update(application_id,cover_letter_required=cover_letter_required); return services.applications.progress(application_id)
     @mcp.tool(name="applications.create")
     def applications_create(company_name:str,formal_title:str,url:str="",location:str="",job_description:str="",normalized_role:str="",role_family:str="",notes:str="",allow_duplicate:bool=False) -> dict: """Create an application. If a saved application already has this exact url, returns that record with duplicate=True instead of creating a second one; pass allow_duplicate=true to create anyway."""; return services.applications.create(company_name,formal_title,allow_duplicate=allow_duplicate,url=url,location=location,job_description=job_description,normalized_role=normalized_role,role_family=role_family,notes=notes)
     @mcp.tool(name="applications.update")
-    def applications_update(application_id:int,company_name:str,formal_title:str,normalized_role:str="",role_family:str="",url:str="",location:str="",job_description:str="",status:str="Draft",notes:str="",user_confirmed_submission:bool=False,tags:str|None=None) -> dict:
-        """Update an application. Preserve every field you are not deliberately changing.
+    def applications_update(application_id:int,company_name:str|None=None,formal_title:str|None=None,url:str|None=None,location:str|None=None,job_description:str|None=None,notes:str|None=None) -> dict:
+        """Edit saved job information, preserving omitted fields and the user-owned active flag."""
+        fields = {key:value for key,value in locals().items() if key != "application_id" and value is not None}
+        return services.applications.update(application_id, **fields)
 
-        CALL WHEN: workflow.next told you to record posting details or a user-confirmed change.
-        DO NOT CALL WHEN: you only want to change status; use applications.set_status.
-        RETURNS: the updated application. Setting status='Applied' requires
-        user_confirmed_submission=true and is refused otherwise. tags is a comma-separated list
-        of lowercase words (e.g. "referral,remote"); omit it to leave tags unchanged.
-        """
-        if status=="Applied" and not user_confirmed_submission:
-            return {
-                "refused":True,
-                "reason":"Applied means the user submitted this externally. Ask them first.",
-                "say_to_user":"Have you submitted this application yourself? I will only mark it Applied once you confirm.",
-                "application":services.applications.get(application_id),
-            }
-        fields:dict[str,Any]=dict(company_name=company_name,formal_title=formal_title,normalized_role=normalized_role,role_family=role_family,url=url,location=location,job_description=job_description,status=status,notes=notes)
-        if tags is not None: fields["tags"]=tags
-        return services.applications.update(application_id,**fields)
+    @mcp.tool(name="applications.set_active")
+    def applications_set_active(application_id:int,active:bool) -> dict:
+        """Set Active or Inactive only when requested by the user."""
+        return services.applications.set_active(application_id, active)
 
-    @mcp.tool(name="applications.set_status")
-    def applications_set_status(application_id:int,status:str,user_confirmed_submission:bool=False) -> dict:
-        """Change only an application's status, leaving every other field untouched.
+    @mcp.tool(name="applications.prepare_drafts",structured_output=True)
+    def applications_prepare_drafts(application_id:int) -> dict[str,Any]:
+        """Prepare a request to generate or regenerate ONLY answers and a cover letter."""
+        return services.applications.prepare_drafts(application_id)
 
-        CALL WHEN: the user tells you an application moved (heard back, interviewing, rejected).
-        DO NOT CALL WHEN: you are changing anything other than status.
-        RETURNS: the updated application. status='Applied' requires user_confirmed_submission=true.
-        """
-        if status=="Applied" and not user_confirmed_submission:
-            return {
-                "refused":True,
-                "reason":"Applied means the user submitted this externally. Ask them first.",
-                "say_to_user":"Have you submitted this application yourself? I will only mark it Applied once you confirm.",
-                "application":services.applications.get(application_id),
-            }
-        return services.applications.set_status(application_id,status)
+    @mcp.tool(name="applications.create_bundle",structured_output=True)
+    def applications_create_bundle(application_id:int) -> dict[str,Any]:
+        """Freeze latest answers, letter, posting and original resume with a UTC date. Drafts stay unapproved."""
+        bundle = services.applications.create_bundle(application_id)
+        return {"id":bundle["id"], "created_at":bundle["created_at"],
+                "download_url":f"{frontend_base_url}/applications/{application_id}/bundles/{bundle['id']}"}
 
-    @mcp.tool(name="applications.log_update")
-    def applications_log_update(application_id:int,event_type:str,occurred_at:str,notes:str="",status:str|None=None,add_tags:list[str]|None=None,contact:dict[str,Any]|None=None) -> dict:
-        """Record a pasted email or a status update as one atomic write: event, status, tags, contact.
-
-        CALL WHEN: the user pastes a recruiter email or reports an update, and confirms your
-        one-sentence summary of it.
-        DO NOT CALL WHEN: the user is confirming they personally submitted the application; this
-        tool always refuses status="Applied" -- call applications.set_status with
-        user_confirmed_submission=true after that confirmation instead.
-        occurred_at: display-local or ISO, same as events.add. If the email has no date, pass
-        occurred_at="" -- today is assumed and event.assumed_now is true -- and tell the user so.
-        contact: optional {name, role, email, phone}; a contact with the same email already on
-        this application is updated, not duplicated.
-        RETURNS: application, event, status_changed; or refused=true with say_to_user when
-        status="Applied" or the status is unknown (nothing is written in that case).
-        """
-        try:
-            return services.applications.log_update(application_id,event_type,occurred_at,notes,status,add_tags or (),contact)
-        except ValueError as exc:
-            return {
-                "refused":True,
-                "reason":str(exc),
-                "say_to_user":(
-                    "Have you submitted this application yourself? I will only mark it Applied once you confirm."
-                    if status=="Applied" else f"I could not log that: {exc}"
-                ),
-                "application":services.applications.get(application_id),
-            }
+    @mcp.tool(name="applications.list_bundles")
+    def applications_list_bundles(application_id:int) -> list[dict]:
+        """List immutable dated bundles for an application."""
+        return services.applications.list_bundles(application_id)
 
     @mcp.tool(name="applications.approve_drafts",structured_output=True)
     def applications_approve_drafts(application_id:int,answer_ids:list[int]|None=None,document_ids:list[int]|None=None,all:bool=False) -> dict[str,Any]:
@@ -447,15 +401,12 @@ Never mark an application Applied until the user says they submitted it themselv
     @mcp.tool(name="documents.get")
     def documents_get(document_id:int) -> dict: """Return document metadata, text, and its file resource URI."""; document=services.documents.get(document_id); return {**document,"resource_uri":f"jobtron://documents/{document_id}"}
     @mcp.tool(name="documents.save")
-    def documents_save(document_type:str,title:str,text_content:str,application_id:int|None=None,approved:bool=False,use_for_applications:bool=False) -> dict: """Save a new text document version; candidate academic documents can be enabled as application context."""; return services.documents.save(document_type,title,application_id,text_content,approved=approved,use_for_applications=use_for_applications)
+    def documents_save(document_type:Literal["cover_letter"],title:str,text_content:str,application_id:int,approved:bool=False) -> dict:
+        """Save a new cover letter version. Generated drafts must use approved=false."""
+        services.applications.get(application_id)
+        return services.documents.save(document_type,title,application_id,text_content,approved=approved)
     @mcp.tool(name="documents.approve")
     def documents_approve(document_id:int) -> dict: """Approve one document version and supersede prior approval in its scope."""; return services.documents.approve(document_id)
-    @mcp.tool(name="documents.academic")
-    def documents_academic(only_enabled:bool=False) -> list[dict]: """List candidate academic documents and their extraction/application-context flags."""; return services.documents.academic(only_enabled)
-    @mcp.tool(name="documents.set_application_use")
-    def documents_set_application_use(document_id:int,use_for_applications:bool) -> dict: """Enable or disable a candidate academic document as application context."""; return services.documents.set_application_use(document_id,use_for_applications)
-    @mcp.tool(name="documents.mark_considered")
-    def documents_mark_considered(application_id:int,document_id:int,note:str="") -> dict: """Record that an enabled academic document was taken into account for an application."""; return services.documents.mark_considered(application_id,document_id,note)
     @mcp.resource("jobtron://documents/{document_id}",mime_type="application/octet-stream")
     def document_resource(document_id:int) -> bytes: """Read exact uploaded document bytes, or UTF-8 for a text-only document."""; return services.documents.content(document_id)
 
@@ -466,145 +417,45 @@ Never mark an application Applied until the user says they submitted it themselv
     @mcp.resource("jobtron://assets/{asset_id}",mime_type="application/octet-stream")
     def asset_resource(asset_id:int) -> bytes: """Read the exact bytes of an uploaded image, PDF, or other asset."""; return services.assets.content(asset_id)
 
-    @mcp.tool(name="events.list")
-    def events_list(application_id:int) -> list[dict]: """Return an application's timeline."""; return services.events.list(application_id)
-    @mcp.tool(name="events.add")
-    def events_add(application_id:int,event_type:str,occurred_at:str,notes:str="") -> dict: """Add an application event."""; return services.events.add(application_id,event_type,occurred_at,notes)
-    @mcp.tool(name="events.update")
-    def events_update(event_id:int,event_type:str,occurred_at:str,notes:str="") -> dict: """Update an application event."""; return services.events.update(event_id,event_type,occurred_at,notes)
     return mcp
-
-
-def _data_store_id(settings: Settings) -> str:
-    """The identifier /healthz reports, so two processes can tell whether a
-    running frontend is serving the same database."""
-    return sha256(str(settings.database_path.resolve()).encode()).hexdigest()[:12]
-
-
-def _frontend_health(base_url: str, timeout: float = 0.4) -> dict[str, Any] | None:
-    """Return the /healthz payload of a Jobtron already serving here, else None."""
-    try:
-        with urlopen(f"{base_url}/healthz", timeout=timeout) as response:  # noqa: S310 - loopback
-            payload = json.load(response)
-    except Exception:
-        return None
-    return payload if isinstance(payload, dict) and payload.get("service") == "jobtron6900" else None
-
-
-def _free_port(host: str) -> int:
-    with socket.socket() as probe:
-        probe.bind((host if host not in {"0.0.0.0", "::"} else "127.0.0.1", 0))
-        return int(probe.getsockname()[1])
-
-
-def _start_frontend(settings: Settings, services: Services) -> tuple[uvicorn.Server, Thread]:
-    from app.main import create_app
-
-    frontend_app = create_app(
-        settings,
-        services,
-        include_mcp_http=False,
-        enforce_single_instance=False,
-    )
-    frontend = uvicorn.Server(
-        uvicorn.Config(
-            frontend_app,
-            host=settings.host,
-            port=settings.port,
-            log_level="warning",
-            access_log=False,
-        )
-    )
-    thread = Thread(target=frontend.run, name="jobtron-frontend", daemon=True)
-    thread.start()
-
-    health_url = f"{settings.frontend_base_url}/healthz"
-    deadline = time.monotonic() + 5
-    last_error: Exception | None = None
-    while time.monotonic() < deadline:
-        if not thread.is_alive():
-            break
-        try:
-            with urlopen(health_url, timeout=0.3) as response:  # noqa: S310 - loopback URL
-                payload = json.load(response)
-            if payload.get("service") == "jobtron6900" and payload.get("status") == "ready":
-                return frontend, thread
-        except Exception as exc:
-            last_error = exc
-            time.sleep(0.05)
-
-    frontend.should_exit = True
-    thread.join(timeout=2)
-    detail = f": {last_error}" if last_error else ""
-    raise RuntimeError(f"Jobtron frontend did not become ready at {health_url}{detail}")
-
-
-def _resolve_frontend(
-    settings: Settings, services: Services
-) -> tuple[Settings, uvicorn.Server | None, Thread | None]:
-    """Decide who serves the web UI.
-
-    Every MCP client gets its own Jobtron process, but they all share one
-    database, so only the first needs to host the frontend. A later process
-    that finds a healthy Jobtron already serving this same database simply
-    points at it. Serving MCP tools never depends on winning that race.
-    """
-    existing = _frontend_health(settings.frontend_base_url)
-    if existing and existing.get("data_store") == _data_store_id(settings):
-        return settings, None, None
-
-    if existing is None:
-        try:
-            frontend, thread = _start_frontend(settings, services)
-            return settings, frontend, thread
-        except Exception:
-            # Lost the race to another starter; share theirs if it is ours.
-            recheck = _frontend_health(settings.frontend_base_url)
-            if recheck and recheck.get("data_store") == _data_store_id(settings):
-                return settings, None, None
-
-    # The port is taken by something that is not our Jobtron. Use another one
-    # rather than refusing to start: the URLs we hand the user must be live.
-    fallback = replace(settings, port=_free_port(settings.host))
-    services.base_url = fallback.frontend_base_url.rstrip("/")
-    frontend, thread = _start_frontend(fallback, services)
-    return fallback, frontend, thread
 
 
 def run_stdio() -> None:
     settings = default_settings()
+    session_file = None
     try:
         db = Database(settings.database_path)
         db.initialize()
         services = Services(db, FileStorage(settings.files_dir), settings.frontend_base_url)
+        session_file = register_session(settings)
 
-        with ExitStack() as stack:
-            # Advisory only: it records which process owns the frontend, and is
-            # no longer allowed to stop a second client from serving its tools.
+        def start_frontend() -> None:
             try:
-                stack.enter_context(InstanceLease(settings))
-            except InstanceInUseError:
-                pass
+                ensure_running(settings)
+            except (PortConflictError, StartFailedError) as exc:
+                sys.stderr.write(f"jobtron: web UI unavailable, MCP tools still work. {exc}\n")
+                sys.stderr.flush()
 
-            settings, frontend, frontend_thread = _resolve_frontend(settings, services)
-            services.base_url = settings.frontend_base_url.rstrip("/")
-            server = build_server(services, settings.frontend_base_url)
+        Thread(target=start_frontend, name="jobtron-ui-start", daemon=True).start()
 
-            async def serve() -> None:
-                async with compatible_stdio_server() as (read_stream, write_stream):
-                    await server._lowlevel_server.run(  # pyright: ignore[reportPrivateUsage]
-                        read_stream,
-                        write_stream,
-                        server._lowlevel_server.create_initialization_options(),  # pyright: ignore[reportPrivateUsage]
-                    )
+        def ensure_frontend() -> None:
+            ensure_running(settings)
 
-            try:
-                anyio.run(serve)
-            finally:
-                if frontend is not None and frontend_thread is not None:
-                    frontend.should_exit = True
-                    frontend_thread.join(timeout=2)
+        server = build_server(services, settings.frontend_base_url, ensure_frontend)
+
+        async def serve() -> None:
+            async with compatible_stdio_server() as (read_stream, write_stream):
+                await server._lowlevel_server.run(  # pyright: ignore[reportPrivateUsage]
+                    read_stream,
+                    write_stream,
+                    server._lowlevel_server.create_initialization_options(),  # pyright: ignore[reportPrivateUsage]
+                )
+
+        anyio.run(serve)
     except Exception as exc:
         sys.stderr.write(f"{exc}\n")
         sys.stderr.flush()
         raise SystemExit(2) from exc
+    finally:
+        if session_file is not None:
+            session_file.unlink(missing_ok=True)

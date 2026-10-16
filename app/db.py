@@ -169,6 +169,20 @@ def _migration_6_cover_letter_source(connection: sqlite3.Connection) -> None:
     )
 
 
+def _migration_7_tracker(connection: sqlite3.Connection) -> None:
+    """Add the smaller tracker without changing any historical records."""
+    connection.execute("ALTER TABLE applications ADD COLUMN active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1))")
+    connection.execute("UPDATE applications SET active=0 WHERE status IN ('Rejected','Withdrawn','Closed')")
+    connection.execute("ALTER TABLE applications ADD COLUMN resume_document_id INTEGER REFERENCES documents(id)")
+    connection.execute("""CREATE TABLE application_bundles (
+        id INTEGER PRIMARY KEY,
+        application_id INTEGER NOT NULL REFERENCES applications(id),
+        created_at TEXT NOT NULL,
+        snapshot_json TEXT NOT NULL,
+        zip_content BLOB NOT NULL
+    )""")
+
+
 # (target_version, migration) applied in order to any database below target.
 MIGRATIONS: list[tuple[int, Any]] = [
     (2, _migration_2_calendar),
@@ -176,6 +190,7 @@ MIGRATIONS: list[tuple[int, Any]] = [
     (4, _migration_4_tags),
     (5, _migration_5_event_kind),
     (6, _migration_6_cover_letter_source),
+    (7, _migration_7_tracker),
 ]
 
 

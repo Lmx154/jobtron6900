@@ -1,7 +1,7 @@
 [project]
 name = "jobtron6900"
 version = "0.1.0"
-description = "Local-first, agent-driven job application workspace with MCP review UI"
+description = "Local application tracker with reviewable answers, cover letters, and dated bundles"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -23,6 +23,7 @@ test = ["pytest>=8.4"]
 [project.scripts]
 jobtron-mcp = "app.mcp.server:run_stdio"
 jobtron-setup = "app.config:setup_main"
+jobtron = "app.cli:main"
 
 [build-system]
 requires = ["hatchling"]

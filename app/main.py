@@ -41,7 +41,7 @@ def create_app(
             else:
                 yield
 
-    app = FastAPI(title="Job Application Workstation", lifespan=lifespan)
+    app = FastAPI(title="Jobtron Application Tracker", lifespan=lifespan)
     app.state.services = services
     app.state.settings = settings
     app.state.templates = Jinja2Templates(directory=Path(__file__).parent / "templates")

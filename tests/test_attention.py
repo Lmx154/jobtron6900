@@ -220,50 +220,47 @@ def test_attention_on_empty_database_returns_four_empty_lists(services):
 
 # -------------------------------------------------------------------- web
 
-def test_dashboard_renders_nothing_waiting_when_attention_is_empty(settings):
-    app = create_app(settings)
-    with TestClient(app) as client:
-        page = client.get("/")
+def test_tracker_empty_state_has_no_attention_rail(settings):
+    with TestClient(create_app(settings)) as client:
+        page = client.get('/')
         assert page.status_code == 200
-        assert "Today" in page.text
-        assert "Nothing is waiting on you." in page.text
+        assert 'Your next application starts here' in page.text
+        assert 'Follow-up due' not in page.text
 
 
-def test_dashboard_renders_today_rail_with_a_due_follow_up(settings):
+def test_legacy_reminders_do_not_expand_the_tracker_ui(settings):
     app = create_app(settings)
+    services = app.state.services
+    record = services.applications.create('Boeing', 'GNC Engineer')
+    services.applications.set_status(record['id'], 'Applied')
+    reminder = next(e for e in services.events.list(record['id']) if e['kind'] == 'reminder')
+    services.db.execute('UPDATE events SET starts_at_utc=? WHERE id=?', (to_utc(datetime.now(UTC)-timedelta(hours=1)),reminder['id']))
     with TestClient(app) as client:
-        created = client.post("/applications", data={"company_name": "Boeing", "formal_title": "GNC Engineer"}, follow_redirects=False)
-        application_id = int(created.headers["location"].rsplit("/", 1)[-1])
-        services = app.state.services
-        services.applications.set_status(application_id, "Applied")
-        reminder = next(e for e in services.events.list(application_id) if e["kind"] == "reminder")
-        services.db.execute(
-            "UPDATE events SET starts_at_utc=? WHERE id=?",
-            (to_utc(datetime.now(UTC) - timedelta(hours=1)), reminder["id"]),
-        )
-        page = client.get("/")
+        page = client.get('/')
         assert page.status_code == 200
-        assert "Follow-up due" in page.text
-        assert "no reply" in page.text
+        assert 'GNC Engineer' in page.text
+        assert 'Follow-up due' not in page.text
+    assert services.events.list(record['id'])
 
 
-def test_detail_page_shows_last_activity_line(settings):
+def test_detail_page_shows_creation_date_and_bundle_section(settings):
     app = create_app(settings)
+    record = app.state.services.applications.create('Boeing','GNC Engineer')
     with TestClient(app) as client:
-        created = client.post("/applications", data={"company_name": "Boeing", "formal_title": "GNC Engineer"}, follow_redirects=False)
-        application_id = int(created.headers["location"].rsplit("/", 1)[-1])
-        page = client.get(f"/applications/{application_id}")
+        page = client.get(f"/applications/{record['id']}")
         assert page.status_code == 200
-        assert "Last activity" in page.text
-        assert "ago" in page.text
+        assert record['created_at'][:10] in page.text
+        assert 'Dated bundles' in page.text
+        assert 'Last activity' not in page.text
 
 
 # -------------------------------------------------------------------- mcp
 
-def test_mcp_applications_attention_returns_buckets_and_frontend_url(settings):
+def test_mcp_replaces_attention_tools_with_application_tracker(settings):
     app = create_app(settings)
-    app.state.services.applications.create("Boeing", "GNC Engineer")
-    result = asyncio.run(app.state.mcp.call_tool("applications.attention", {}))
-    data = result.structured_content
-    assert set(data.keys()) >= {"upcoming", "follow_up_due", "stale", "idle_drafts", "frontend_url"}
-    assert data["frontend_url"] == "http://127.0.0.1:8765/applications"
+    app.state.services.applications.create('Boeing','GNC Engineer')
+    tools = {tool.name for tool in asyncio.run(app.state.mcp.list_tools())}
+    assert 'applications.attention' not in tools
+    result = asyncio.run(app.state.mcp.call_tool('ui.show_applications', {}))
+    assert result.structured_content['frontend_url'] == 'http://127.0.0.1:8765/applications'
+    assert result.structured_content['applications'][0]['formal_title'] == 'GNC Engineer'
